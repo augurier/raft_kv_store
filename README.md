@@ -15,6 +15,8 @@ go mod download安装依赖
 如果出现tcp listen error可能是因为之前的进程没用正常退出，占用了端口  
 lsof -i :9091查看pid  
 kill -9 <pid>杀死进程  
+## 关于测试
+通过新开进程的方式创建节点，如果通过线程创建，会出现重复注册rpc问题
 
 # todo list
 消息通讯异常的处理  

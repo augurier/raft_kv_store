@@ -4,19 +4,19 @@
 RUN_TIME=10
 
 # 需要传递数据的管道
-PIPE_NAME="/tmp/raft_input_pipe"
+PIPE_NAME="/tmp/input_pipe"
 
 # 启动节点1
 echo "Starting Node 1..."
-timeout $RUN_TIME ./raftnode -id 1 -port ":9091" -cluster "127.0.0.1:9092,127.0.0.1:9093" -pipe "$PIPE_NAME" -isleader=true &
+timeout $RUN_TIME ./main -id 1 -port ":9091" -cluster "127.0.0.1:9092,127.0.0.1:9093" -pipe "$PIPE_NAME" -isleader=true &
 
 # 启动节点2
 echo "Starting Node 2..."
-timeout $RUN_TIME ./raftnode -id 2 -port ":9092" -cluster "127.0.0.1:9091,127.0.0.1:9093" -pipe "$PIPE_NAME" &
+timeout $RUN_TIME ./main -id 2 -port ":9092" -cluster "127.0.0.1:9091,127.0.0.1:9093" -pipe "$PIPE_NAME" &
 
 # 启动节点3
 echo "Starting Node 3..."
-timeout $RUN_TIME ./raftnode -id 3 -port ":9093" -cluster "127.0.0.1:9091,127.0.0.1:9092" -pipe "$PIPE_NAME"&
+timeout $RUN_TIME ./main -id 3 -port ":9093" -cluster "127.0.0.1:9091,127.0.0.1:9092" -pipe "$PIPE_NAME"&
 
 echo "All nodes started successfully!"
 # 创建一个管道用于进程间通信

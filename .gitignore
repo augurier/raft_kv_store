@@ -24,4 +24,4 @@ go.work
 .idea
 .idea/*
 
-raftnode
+main

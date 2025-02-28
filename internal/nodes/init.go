@@ -21,15 +21,15 @@ func newNode(address string) *Public_node_info {
 	}
 }
 
-func Init(id int, nodeAddr []string, pipe string) *Node {
-	ns := make(map[int]*Public_node_info)
-	for k, v := range nodeAddr {
-		ns[k] = newNode(v)
+func Init(id string, nodeAddr map[string]string, pipe string) *Node {
+	ns := make(map[string]*Public_node_info)
+	for id, addr := range nodeAddr {
+		ns[id] = newNode(addr)
 	}
 
 	// 创建节点
 	return &Node{
-		self:  id,
+		selfId:  id,
 		nodes: ns,
 		pipeAddr: pipe,
 	}
@@ -51,31 +51,31 @@ func Start(node *Node, isLeader bool) {
 				// candidate发布一个监听输入线程后，变成leader
 				node.state = Leader
 				go func() {
-					if node.pipeAddr == "" {
-						log.Error("暂不支持非管道读入")
-					}
-
-					pipe, err := os.Open(node.pipeAddr)
-					if err != nil {
-						log.Error("Failed to open pipe")
-					}
-					defer pipe.Close()
-
-					// 不断读取管道中的输入
-					buffer := make([]byte, 256)
-					for {
-						n, err := pipe.Read(buffer)
-						if err != nil && err != io.EOF {
-							log.Error("Error reading from pipe")
+					if node.pipeAddr == "" { // 客户端远程调用server_node方法
+						log.Info("请运行客户端进程进行读写")
+					} else { // 命令行提供了管道，支持管道（键盘）输入
+						pipe, err := os.Open(node.pipeAddr)
+						if err != nil {
+							log.Error("Failed to open pipe")
 						}
-						if n > 0 {
-							input := string(buffer[:n])
-							log.Info("send : " + input)
-							// 将用户输入封装成一个 LogEntry
-							kv := LogEntry{input, ""}
-							node.log = append(node.log, kv)
-							// 广播给其它节点
-							node.BroadCastKV(kv)
+						defer pipe.Close()
+
+						// 不断读取管道中的输入
+						buffer := make([]byte, 256)
+						for {
+							n, err := pipe.Read(buffer)
+							if err != nil && err != io.EOF {
+								log.Error("Error reading from pipe")
+							}
+							if n > 0 {
+								input := string(buffer[:n])
+								log.Info("send : " + input)
+								// 将用户输入封装成一个 LogEntry
+								kv := LogEntry{input, ""}
+								node.log = append(node.log, kv)
+								// 广播给其它节点
+								node.BroadCastKV(kv)
+							}
 						}
 					}
 				}()
@@ -92,9 +92,10 @@ func (node *Node) Rpc(port string) {
 		log.Fatal("rpc register failed", zap.Error(err))
 	}
 	rpc.HandleHTTP()
+	
 	l, e := net.Listen("tcp", port)
 	if e != nil {
-		log.Fatal("listen error:", zap.Error(err))
+		log.Fatal("listen error:", zap.Error(e))
 	}
 	go func() {
 		err := http.Serve(l, nil)

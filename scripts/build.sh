@@ -1,1 +1,1 @@
-go build -o raftnode ./cmd/main.go
+go build -o main ./cmd/main.go

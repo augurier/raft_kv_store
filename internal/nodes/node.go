@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"net/rpc"
+
 	"go.uber.org/zap"
 )
 
@@ -20,10 +21,10 @@ type Public_node_info struct {
 
 type Node struct {
 	// 当前节点id
-	self int
+	selfId string
 
 	// 除当前节点外其他节点信息
-	nodes map[int]*Public_node_info
+	nodes map[string]*Public_node_info
 
 	//管道名
 	pipeAddr string
@@ -37,16 +38,16 @@ type Node struct {
 
 func (node *Node) BroadCastKV(kv LogEntry) {
 	// 遍历所有节点
-	for i := range node.nodes {
-		go func (index int, kv LogEntry)  {
+	for id, _ := range node.nodes {
+		go func(id string, kv LogEntry) {
 			var reply KVReply
-			node.sendKV(index, kv, &reply)
-		} (i, kv)
+			node.sendKV(id, kv, &reply)
+		}(id, kv)
 	}
 }
 
-func (node *Node) sendKV(index int, kv LogEntry, reply *KVReply) {
-	client, err := rpc.DialHTTP("tcp", node.nodes[index].address)
+func (node *Node) sendKV(id string, kv LogEntry, reply *KVReply) {
+	client, err := rpc.DialHTTP("tcp", node.nodes[id].address)
 	if err != nil {
 		log.Error("dialing: ", zap.Error(err))
 		return
@@ -73,10 +74,11 @@ func (node *Node) sendKV(index int, kv LogEntry, reply *KVReply) {
 
 // RPC call
 func (node *Node) ReceiveKV(kv LogEntry, reply *KVReply) error {
-	log.Info("receive: " + kv.Key)
-	reply.Reply = true;
+	log.Info("node_" + node.selfId + " receive: " + kv.Key)
+	reply.Reply = true
 	return nil
 }
+
 // func (node *Node) broadcastHeartbeat() {
 // 	// 遍历所有节点
 // 	for i := range raft.nodes {
@@ -104,4 +106,3 @@ func (node *Node) ReceiveKV(kv LogEntry, reply *KVReply) error {
 // 		}(i, hb)
 // 	}
 // }
-
