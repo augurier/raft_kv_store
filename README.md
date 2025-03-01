@@ -7,7 +7,7 @@
 # 环境与运行
 使用环境是wsl+ubuntu  
 go mod download安装依赖  
-./scripts/build.sh 会在根目录下编译出raftnode
+./scripts/build.sh 会在根目录下编译出main
 ./scripts/run.sh 运行三个节点，目前能在终端进行读入，leader（n1）节点输出send log，其余节点输出receive log。终端输入后如果超时就退出（脚本运行时间可以在其中调整）。
 
 # 注意

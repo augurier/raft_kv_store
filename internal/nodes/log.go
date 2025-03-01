@@ -8,3 +8,8 @@ type LogEntry struct {
 type KVReply struct {
 	Reply bool
 }
+
+type LogIdAndEntry struct {
+	LogId int
+	Entry LogEntry
+}

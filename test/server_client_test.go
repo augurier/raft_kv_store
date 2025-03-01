@@ -19,6 +19,7 @@ import (
 var log, _ = logprovider.CreateDefaultZapLogger(zap.InfoLevel)
 
 func TestServerClient(t *testing.T) {
+	// 登记结点信息
 	n := 5
 	var clusters []string
 	for i := 0; i < n; i++ {
@@ -27,6 +28,7 @@ func TestServerClient(t *testing.T) {
 		clusters = append(clusters, addr)
 	}
 
+	// 结点启动
 	var cmds []*exec.Cmd
 	for i := 0; i < n; i++ { 
 		tmpClusters := append(clusters[:i], clusters[i+1:]...)
@@ -57,25 +59,41 @@ func TestServerClient(t *testing.T) {
 		}				
 	}
 
-	time.Sleep(time.Second)
+	time.Sleep(time.Second) // 等待启动完毕
 	// client启动
 	c := clientPkg.Client{Address: "127.0.0.1:9090", ServerId: "1"}
-	s := c.Write(nodes.LogEntry{Key: "1", Value: "hello"})
-	if s != clientPkg.Ok {
-		t.Errorf("write test fail")
+
+	// 写入
+	var s clientPkg.Status
+	for i := 0; i < 10; i++ {
+		key := strconv.Itoa(i)
+		s := c.Write(nodes.LogEntry{Key: key, Value: "hello"})
+		if s != clientPkg.Ok {
+			t.Errorf("write test fail")
+		}		
 	}
 
-	var value string
-	s = c.Read("1", &value)
-	if s != clientPkg.Ok {
-		t.Errorf("Read test1 fail")
+	// 读写入数据
+	for i := 0; i < 10; i++ {
+		key := strconv.Itoa(i)
+		var value string
+		s = c.Read(key, &value)
+		if s != clientPkg.Ok {
+			t.Errorf("Read test1 fail")
+		}
 	}
 
-	s = c.Read("2", &value)
-	if s != clientPkg.NotFound {
-		t.Errorf("Read test2 fail")
+	// 读未写入数据
+	for i := 10; i < 15; i++ {
+		key := strconv.Itoa(i)
+		var value string
+		s = c.Read(key, &value)
+		if s != clientPkg.NotFound {
+			t.Errorf("Read test2 fail")
+		}
 	}
 
+	// 通知进程结束
 	for _, cmd := range cmds {
 		err := cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {

@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"net/rpc"
+	"strconv"
 
 	"go.uber.org/zap"
 )
@@ -33,20 +34,23 @@ type Node struct {
 	state State
 
 	// 简单的kv存储
-	log []LogEntry
+	log map[int]LogEntry
+
+	// leader用来标记新log
+	maxLogId int 
 }
 
-func (node *Node) BroadCastKV(kv LogEntry) {
+func (node *Node) BroadCastKV(logId int, kv LogEntry) {
 	// 遍历所有节点
 	for id, _ := range node.nodes {
 		go func(id string, kv LogEntry) {
 			var reply KVReply
-			node.sendKV(id, kv, &reply)
+			node.sendKV(id, logId, kv, &reply)
 		}(id, kv)
 	}
 }
 
-func (node *Node) sendKV(id string, kv LogEntry, reply *KVReply) {
+func (node *Node) sendKV(id string, logId int, kv LogEntry, reply *KVReply) {
 	client, err := rpc.DialHTTP("tcp", node.nodes[id].address)
 	if err != nil {
 		log.Error("dialing: ", zap.Error(err))
@@ -60,7 +64,8 @@ func (node *Node) sendKV(id string, kv LogEntry, reply *KVReply) {
 		}
 	}(client)
 
-	callErr := client.Call("Node.ReceiveKV", kv, reply) // RPC
+	arg := LogIdAndEntry{logId, kv}
+	callErr := client.Call("Node.ReceiveKV", arg, reply) // RPC
 	if callErr != nil {
 		log.Error("dialing: ", zap.Error(callErr))
 	}
@@ -73,8 +78,13 @@ func (node *Node) sendKV(id string, kv LogEntry, reply *KVReply) {
 }
 
 // RPC call
-func (node *Node) ReceiveKV(kv LogEntry, reply *KVReply) error {
-	log.Info("node_" + node.selfId + " receive: " + kv.Key)
+func (node *Node) ReceiveKV(arg LogIdAndEntry, reply *KVReply) error {
+	log.Info("node_" + node.selfId + " receive: logId = "+ strconv.Itoa(arg.LogId) + ", key = " + arg.Entry.Key)
+	entry, ok := node.log[arg.LogId]
+	if !ok {
+		node.log[arg.LogId] = entry
+	}
+	// 持久化
 	reply.Reply = true
 	return nil
 }

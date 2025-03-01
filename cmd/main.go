@@ -59,6 +59,6 @@ func main() {
 	nodes.Start(node, *isLeader)
 
 	sig := <-sigs
-	fmt.Println("接收到信号:", sig)
+	fmt.Println("node_" + *id + "接收到信号:", sig)
 
 }

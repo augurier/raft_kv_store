@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"os"
 	"simple-kv-store/internal/logprovider"
+	"strconv"
 	"time"
 
 	"go.uber.org/zap"
@@ -32,6 +33,8 @@ func Init(id string, nodeAddr map[string]string, pipe string) *Node {
 		selfId:  id,
 		nodes: ns,
 		pipeAddr: pipe,
+		maxLogId: 0,
+		log: make(map[int]LogEntry),
 	}
 }
 
@@ -68,13 +71,17 @@ func Start(node *Node, isLeader bool) {
 								log.Error("Error reading from pipe")
 							}
 							if n > 0 {
-								input := string(buffer[:n])
-								log.Info("send : " + input)
+								input := string(buffer[:n])					
 								// 将用户输入封装成一个 LogEntry
-								kv := LogEntry{input, ""}
-								node.log = append(node.log, kv)
+								kv := LogEntry{input, ""} // 目前键盘输入key，value 0
+								logId := node.maxLogId
+								node.maxLogId++
+								node.log[logId] = kv
+
+								log.Info("send : logId = " + strconv.Itoa(logId) + ", key = " + input)
 								// 广播给其它节点
-								node.BroadCastKV(kv)
+								node.BroadCastKV(logId, kv)
+								// 持久化
 							}
 						}
 					}

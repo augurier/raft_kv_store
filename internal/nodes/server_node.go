@@ -1,8 +1,7 @@
 package nodes
 
-import (
+import "strconv"
 
-)
 // leader node作为server为client注册的方法
 type ServerReply struct{
 	Isconnect bool
@@ -11,10 +10,13 @@ type ServerReply struct{
 }
 // RPC call
 func (node *Node) WriteKV(kv LogEntry, reply *ServerReply) error {
-	log.Info("server write : " + kv.Key)
-	node.log = append(node.log, kv)
+	
+	logId := node.maxLogId
+	node.maxLogId++
+	node.log[logId] = kv
 	// 广播给其它节点
-	node.BroadCastKV(kv)
+	log.Info("server write : logId = " + strconv.Itoa(logId) + ", key = " + kv.Key)
+	node.BroadCastKV(logId, kv)
 	reply.Isconnect = true
 	return nil
 }
