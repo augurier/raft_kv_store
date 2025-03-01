@@ -4,6 +4,7 @@ import (
 	"net/rpc"
 	"strconv"
 
+	"github.com/syndtr/goleveldb/leveldb"
 	"go.uber.org/zap"
 )
 
@@ -38,6 +39,8 @@ type Node struct {
 
 	// leader用来标记新log
 	maxLogId int 
+
+	db *leveldb.DB
 }
 
 func (node *Node) BroadCastKV(logId int, kv LogEntry) {
@@ -67,13 +70,7 @@ func (node *Node) sendKV(id string, logId int, kv LogEntry, reply *KVReply) {
 	arg := LogIdAndEntry{logId, kv}
 	callErr := client.Call("Node.ReceiveKV", arg, reply) // RPC
 	if callErr != nil {
-		log.Error("dialing: ", zap.Error(callErr))
-	}
-
-	if reply.Reply { // 发送成功
-
-	} else { // 失败
-
+		log.Error("dialing node_" + id + "fail: ", zap.Error(callErr))
 	}
 }
 
@@ -85,34 +82,8 @@ func (node *Node) ReceiveKV(arg LogIdAndEntry, reply *KVReply) error {
 		node.log[arg.LogId] = entry
 	}
 	// 持久化
-	reply.Reply = true
+	node.db.Put([]byte(arg.Entry.Key), []byte(arg.Entry.Value), nil)
+	reply.Reply = true // rpc call需要有reply，但实际上调用是否成功是error返回值决定
 	return nil
 }
 
-// func (node *Node) broadcastHeartbeat() {
-// 	// 遍历所有节点
-// 	for i := range raft.nodes {
-// 		// request 参数
-// 		hb := Heartbeat{
-// 			Term:        raft.currTerm,
-// 			LeaderId:    raft.self,
-// 			CommitIndex: raft.commitIndex,
-// 		}
-
-// 		prevLogIndex := raft.nextIndex[i] - 1
-
-// 		// 如果有日志未同步则发送
-// 		if raft.getLastIndex() > prevLogIndex {
-// 			hb.PrevLogIndex = prevLogIndex
-// 			hb.PrevLogTerm = raft.log[prevLogIndex].CurrTerm
-// 			hb.Entries = raft.log[prevLogIndex:]
-// 			// log.Info("will send log entries", zap.Any("logEntries", hb.Entries))
-// 		}
-
-// 		go func(index int, hb Heartbeat) {
-// 			var reply HeartbeatReply
-// 			// 向某一个节点发送 heartbeat
-// 			raft.sendHeartbeat(index, hb, &reply)
-// 		}(i, hb)
-// 	}
-// }

@@ -1,6 +1,10 @@
 package nodes
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/syndtr/goleveldb/leveldb"
+)
 
 // leader node作为server为client注册的方法
 type ServerReply struct{
@@ -15,6 +19,7 @@ func (node *Node) WriteKV(kv LogEntry, reply *ServerReply) error {
 	node.maxLogId++
 	node.log[logId] = kv
 	// 广播给其它节点
+	node.db.Put([]byte(kv.Key), []byte(kv.Value), nil)
 	log.Info("server write : logId = " + strconv.Itoa(logId) + ", key = " + kv.Key)
 	node.BroadCastKV(logId, kv)
 	reply.Isconnect = true
@@ -24,15 +29,13 @@ func (node *Node) WriteKV(kv LogEntry, reply *ServerReply) error {
 func (node *Node) ReadKey(key string, reply *ServerReply) error {
 	log.Info("server read : " + key)
 	// 先只读leader自己
-	for _, kv := range node.log {
-		if kv.Key == key {
-			reply.Value = kv.Value
-			reply.HaveValue = true
-			reply.Isconnect = true
-			return nil
-		}
+	value, err := node.db.Get([]byte(key), nil)
+	if err == leveldb.ErrNotFound {
+		reply.HaveValue = false
+	} else {
+		reply.HaveValue = true
+		reply.Value = string(value)
 	}
-	reply.HaveValue = false
 	reply.Isconnect = true
 	return nil
 }

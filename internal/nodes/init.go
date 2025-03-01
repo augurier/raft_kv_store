@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/syndtr/goleveldb/leveldb"
 	"go.uber.org/zap"
 )
 
@@ -22,7 +23,7 @@ func newNode(address string) *Public_node_info {
 	}
 }
 
-func Init(id string, nodeAddr map[string]string, pipe string) *Node {
+func Init(id string, nodeAddr map[string]string, pipe string, db *leveldb.DB) *Node {
 	ns := make(map[string]*Public_node_info)
 	for id, addr := range nodeAddr {
 		ns[id] = newNode(addr)
@@ -30,11 +31,12 @@ func Init(id string, nodeAddr map[string]string, pipe string) *Node {
 
 	// 创建节点
 	return &Node{
-		selfId:  id,
-		nodes: ns,
+		selfId:   id,
+		nodes:    ns,
 		pipeAddr: pipe,
 		maxLogId: 0,
-		log: make(map[int]LogEntry),
+		log:      make(map[int]LogEntry),
+		db:       db,
 	}
 }
 
@@ -71,7 +73,7 @@ func Start(node *Node, isLeader bool) {
 								log.Error("Error reading from pipe")
 							}
 							if n > 0 {
-								input := string(buffer[:n])					
+								input := string(buffer[:n])
 								// 将用户输入封装成一个 LogEntry
 								kv := LogEntry{input, ""} // 目前键盘输入key，value 0
 								logId := node.maxLogId
@@ -82,6 +84,7 @@ func Start(node *Node, isLeader bool) {
 								// 广播给其它节点
 								node.BroadCastKV(logId, kv)
 								// 持久化
+								node.db.Put([]byte(kv.Key), []byte(kv.Value), nil)
 							}
 						}
 					}
@@ -99,7 +102,7 @@ func (node *Node) Rpc(port string) {
 		log.Fatal("rpc register failed", zap.Error(err))
 	}
 	rpc.HandleHTTP()
-	
+
 	l, e := net.Listen("tcp", port)
 	if e != nil {
 		log.Fatal("listen error:", zap.Error(e))

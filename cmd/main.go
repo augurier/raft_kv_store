@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"github.com/syndtr/goleveldb/leveldb"
 
 	"go.uber.org/zap"
 )
@@ -32,6 +33,7 @@ func main() {
 	id := flag.String("id", "1", "node ID")
 	pipe := flag.String("pipe", "", "input from scripts")
 	isLeader := flag.Bool("isleader", false, "init node state")
+	isNewDb := flag.Bool("isNewDb", true, "new test or restart")
 
 	// 参数解析
 	flag.Parse()
@@ -49,10 +51,28 @@ func main() {
 		idClusterPairs[strconv.Itoa(idCnt)] = addr 
 		idCnt++
 	}
-	node := nodes.Init(*id, idClusterPairs, *pipe)
 
+	if *isNewDb {
+		os.RemoveAll("leveldb/simple-kv-store" + *id)
+	}
+	// 打开或创建每个结点自己的数据库
+	db, err := leveldb.OpenFile("leveldb/simple-kv-store" + *id, nil)
+	if err != nil {
+		log.Fatal("Failed to open database: ", zap.Error(err))
+	}
+	defer db.Close() // 确保数据库在使用完毕后关闭
+	iter := db.NewIterator(nil, nil)
+	defer iter.Release()
+
+	// 计数
+	count := 0
+	for iter.Next() {
+		count++
+	}
+	fmt.Printf(*id + "结点目前有数据：%d\n", count)
+
+	node := nodes.Init(*id, idClusterPairs, *pipe, db)
 	log.Info("id: " + *id + "节点开始监听: " + *port + "端口")
-
 	// 监听rpc
 	node.Rpc(*port)
 	// 开启 raft
