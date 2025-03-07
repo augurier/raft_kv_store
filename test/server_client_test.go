@@ -46,7 +46,8 @@ func TestServerClient(t *testing.T) {
 	var s clientPkg.Status
 	for i := 0; i < 10; i++ {
 		key := strconv.Itoa(i)
-		s := c.Write(nodes.LogEntry{Key: key, Value: "hello" + key})
+		newlog := nodes.LogEntry{Key: key, Value: "hello"}
+		s := c.Write(nodes.LogEntryCall{LogE: newlog, CallState: nodes.Normal})
 		if s != clientPkg.Ok {
 			t.Errorf("write test fail")
 		}		

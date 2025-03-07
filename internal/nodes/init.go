@@ -82,7 +82,8 @@ func Start(node *Node, isLeader bool) {
 
 								log.Info("send : logId = " + strconv.Itoa(logId) + ", key = " + input)
 								// 广播给其它节点
-								node.BroadCastKV(logId, kv)
+								kvCall := LogEntryCall{kv, Normal}
+								node.BroadCastKV(logId, kvCall)
 								// 持久化
 								node.db.Put([]byte(kv.Key), []byte(kv.Value), nil)
 							}

@@ -24,8 +24,8 @@ const (
 	Fail
 )
 
-func (client *Client) Write(kv nodes.LogEntry) Status {
-	log.Info("client write request key :" + kv.Key)
+func (client *Client) Write(kvCall nodes.LogEntryCall) Status {
+	log.Info("client write request key :" + kvCall.LogE.Key)
 	c, err := rpc.DialHTTP("tcp", client.Address)
 	if err != nil {
 		log.Error("dialing: ", zap.Error(err))
@@ -40,7 +40,7 @@ func (client *Client) Write(kv nodes.LogEntry) Status {
 	}(c)
 
 	var reply nodes.ServerReply
-	callErr := c.Call("Node.WriteKV", kv, &reply) // RPC
+	callErr := c.Call("Node.WriteKV", kvCall, &reply) // RPC
 	if callErr != nil {
 		log.Error("dialing: ", zap.Error(callErr))
 		return Fail

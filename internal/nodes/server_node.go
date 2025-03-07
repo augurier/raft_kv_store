@@ -13,15 +13,15 @@ type ServerReply struct{
 	Value string
 }
 // RPC call
-func (node *Node) WriteKV(kv LogEntry, reply *ServerReply) error {
+func (node *Node) WriteKV(kvCall LogEntryCall, reply *ServerReply) error {
 	
 	logId := node.maxLogId
 	node.maxLogId++
-	node.log[logId] = kv
-	// 广播给其它节点
-	node.db.Put([]byte(kv.Key), []byte(kv.Value), nil)
-	log.Info("server write : logId = " + strconv.Itoa(logId) + ", key = " + kv.Key)
-	node.BroadCastKV(logId, kv)
+	node.log[logId] = kvCall.LogE
+	node.db.Put([]byte(kvCall.LogE.Key), []byte(kvCall.LogE.Value), nil)
+	log.Info("server write : logId = " + strconv.Itoa(logId) + ", key = " + kvCall.LogE.Key)
+	// 广播给其它节点	
+	node.BroadCastKV(logId, kvCall)
 	reply.Isconnect = true
 	return nil
 }

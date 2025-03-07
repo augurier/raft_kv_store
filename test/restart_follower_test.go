@@ -46,7 +46,8 @@ func TestFollowerRestart(t *testing.T) {
 	var s clientPkg.Status
 	for i := 0; i < 5; i++ {
 		key := strconv.Itoa(i)
-		s := cWrite.Write(nodes.LogEntry{Key: key, Value: "hello"})
+		newlog := nodes.LogEntry{Key: key, Value: "hello"}
+		s := cWrite.Write(nodes.LogEntryCall{LogE: newlog, CallState: nodes.Normal})
 		if s != clientPkg.Ok {
 			t.Errorf("write test fail")
 		}		
@@ -61,7 +62,8 @@ func TestFollowerRestart(t *testing.T) {
 	// 继续写入
 	for i := 5; i < 10; i++ {
 		key := strconv.Itoa(i)
-		s := cWrite.Write(nodes.LogEntry{Key: key, Value: "hello"})
+		newlog := nodes.LogEntry{Key: key, Value: "hello"}
+		s := cWrite.Write(nodes.LogEntryCall{LogE: newlog, CallState: nodes.Normal})
 		if s != clientPkg.Ok {
 			t.Errorf("write test fail")
 		}		
