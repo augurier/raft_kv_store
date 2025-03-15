@@ -58,7 +58,7 @@ func TestServerClient(t *testing.T) {
 		key := strconv.Itoa(i)
 		var value string
 		s = c.Read(key, &value)
-		if s != clientPkg.Ok && value != "hello" + key {
+		if s != clientPkg.Ok || value != "hello" {
 			t.Errorf("Read test1 fail")
 		}
 	}

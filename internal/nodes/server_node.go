@@ -13,15 +13,14 @@ type ServerReply struct{
 	Value string
 }
 // RPC call
-func (node *Node) WriteKV(kvCall LogEntryCall, reply *ServerReply) error {
-	
-	logId := node.maxLogId
+func (node *Node) WriteKV(kvCall LogEntryCall, reply *ServerReply) error {	
 	node.maxLogId++
-	node.log[logId] = kvCall.LogE
-	node.db.Put([]byte(kvCall.LogE.Key), []byte(kvCall.LogE.Value), nil)
-	log.Info("server write : logId = " + strconv.Itoa(logId) + ", key = " + kvCall.LogE.Key)
+	logId := node.maxLogId
+	node.log = append(node.log, RaftLogEntry{kvCall.LogE, logId, node.currTerm})
+	// node.db.Put([]byte(kvCall.LogE.Key), []byte(kvCall.LogE.Value), nil)
+	log.Info("server write request : " + kvCall.LogE.print() + ", 模拟方式 : " + strconv.Itoa(int(kvCall.CallState)))
 	// 广播给其它节点	
-	node.BroadCastKV(logId, kvCall)
+	node.BroadCastKV(kvCall.CallState)
 	reply.Isconnect = true
 	return nil
 }

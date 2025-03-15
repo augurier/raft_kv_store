@@ -30,14 +30,26 @@ func Init(id string, nodeAddr map[string]string, pipe string, db *leveldb.DB) *N
 	}
 
 	// 创建节点
-	return &Node{
+	node := &Node{
 		selfId:   id,
 		nodes:    ns,
 		pipeAddr: pipe,
-		maxLogId: 0,
-		log:      make(map[int]LogEntry),
+		maxLogId: -1,
+		currTerm: 1,
+		log:      make([]RaftLogEntry, 0),
+		commitIndex: -1,
+		lastApplied: -1,
+		nextIndex: make(map[string]int),
+		matchIndex: make(map[string]int),
 		db:       db,
 	}
+	for nodeId := range nodeAddr {
+        if nodeId != id { // 不初始化自身
+            node.nextIndex[nodeId] = node.maxLogId + 1
+            node.matchIndex[nodeId] = 0
+        }
+    }
+	return node
 }
 
 func Start(node *Node, isLeader bool) {
@@ -53,6 +65,9 @@ func Start(node *Node, isLeader bool) {
 			case Follower:
 
 			case Candidate:
+				// todo 成为leader的初始化
+				// node.currTerm = 1
+
 				// candidate发布一个监听输入线程后，变成leader
 				node.state = Leader
 				go func() {
@@ -78,12 +93,11 @@ func Start(node *Node, isLeader bool) {
 								kv := LogEntry{input, ""} // 目前键盘输入key，value 0
 								logId := node.maxLogId
 								node.maxLogId++
-								node.log[logId] = kv
+								node.log[logId] = RaftLogEntry{kv, logId, node.currTerm}
 
 								log.Info("send : logId = " + strconv.Itoa(logId) + ", key = " + input)
 								// 广播给其它节点
-								kvCall := LogEntryCall{kv, Normal}
-								node.BroadCastKV(logId, kvCall)
+								node.BroadCastKV(Normal)
 								// 持久化
 								node.db.Put([]byte(kv.Key), []byte(kv.Value), nil)
 							}
