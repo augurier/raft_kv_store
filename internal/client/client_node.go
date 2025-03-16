@@ -26,31 +26,34 @@ const (
 
 func (client *Client) Write(kvCall nodes.LogEntryCall) Status {
 	log.Info("client write request key :" + kvCall.LogE.Key)
-	c, err := rpc.DialHTTP("tcp", client.Address)
-	if err != nil {
-		log.Error("dialing: ", zap.Error(err))
-		return Fail
-	}
 
-	defer func(server *rpc.Client) {
-		err := c.Close()
+	var reply nodes.ServerReply
+	reply.Isleader = false
+	addr := client.Address
+	for !reply.Isleader {
+		c, err := rpc.DialHTTP("tcp", addr)
+		if err != nil {
+			log.Error("dialing: ", zap.Error(err))
+			return Fail
+		}
+
+		callErr := c.Call("Node.WriteKV", kvCall, &reply) // RPC
+		if callErr != nil {
+			log.Error("dialing: ", zap.Error(callErr))
+			return Fail
+		}
+		err = c.Close()
 		if err != nil {
 			log.Error("client close err: ", zap.Error(err))
 		}
-	}(c)
 
-	var reply nodes.ServerReply
-	callErr := c.Call("Node.WriteKV", kvCall, &reply) // RPC
-	if callErr != nil {
-		log.Error("dialing: ", zap.Error(callErr))
-		return Fail
+		if !reply.Isleader { // 发过去的不是leader
+			addr = reply.LeaderAddress
+		} else { // 成功
+			return Ok
+		}		
 	}
-
-	if reply.Isconnect { // 发送成功
-		return Ok
-	} else { // 失败
-		return Fail
-	}
+	return Fail
 }
 
 func (client *Client) Read(key string, value *string) Status { // 查不到value为空
@@ -79,15 +82,12 @@ func (client *Client) Read(key string, value *string) Status { // 查不到value
 		return Fail
 	}
 
-	if reply.Isconnect { // 发送成功
-		if reply.HaveValue {
-			*value = reply.Value
-			return Ok
-		} else {
-			return NotFound
-		}
-	} else { // 失败
-		return Fail
+	// 目前一定发送成功
+	if reply.HaveValue {
+		*value = reply.Value
+		return Ok
+	} else {
+		return NotFound
 	}
 }
 

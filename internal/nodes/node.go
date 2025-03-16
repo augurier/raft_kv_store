@@ -5,6 +5,7 @@ import (
 	"net/rpc"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -25,8 +26,11 @@ type Public_node_info struct {
 }
 
 type Node struct {
+	mu    sync.Mutex
 	// 当前节点id
 	selfId string
+	// 记录的leader(不能用votedfor：投票的leader可能没有收到多数票)
+	leaderId string
 
 	// 除当前节点外其他节点信息
 	nodes map[string]*Public_node_info
@@ -60,6 +64,8 @@ type Node struct {
 
 	db *leveldb.DB
 
+	votedFor string
+	electionTimer *time.Timer
 }
 
 func (node *Node) BroadCastKV(callMode CallMode) {
@@ -72,6 +78,7 @@ func (node *Node) BroadCastKV(callMode CallMode) {
 }
 
 func (node *Node) sendKV(id string, callMode CallMode) {
+
 	switch callMode {
 	case Fail:
 		log.Info("模拟发送失败")
@@ -96,6 +103,9 @@ func (node *Node) sendKV(id string, callMode CallMode) {
 		}
 	}(client)
 
+	node.mu.Lock()
+    defer node.mu.Unlock()
+
 	var appendReply AppendEntriesReply
 	appendReply.Success = false
 	nextIndex := node.nextIndex[id]
@@ -110,6 +120,7 @@ func (node *Node) sendKV(id string, callMode CallMode) {
 			PrevLogIndex: nextIndex - 1,
 			Entries: sendEntries,
 			LeaderCommit: node.commitIndex,
+			LeaderId: node.selfId,
 		}
 		if arg.PrevLogIndex >= 0 {
 			arg.PrevLogTerm = node.log[arg.PrevLogIndex].Term
@@ -133,9 +144,6 @@ func (node *Node) sendKV(id string, callMode CallMode) {
 }
 
 func (node *Node) updateCommitIndex() {
-    // node.mu.Lock()
-    // defer node.mu.Unlock()
-
     totalNodes := len(node.nodes)
 
     // 收集所有 matchIndex 并排序
@@ -149,9 +157,9 @@ func (node *Node) updateCommitIndex() {
     majorityIndex := matchIndexes[totalNodes/2] // 取 N/2 位置上的索引（多数派）
 
     // 确保这个索引的日志条目属于当前 term，防止提交旧 term 的日志
-    if majorityIndex > node.commitIndex && node.log[majorityIndex].Term == node.currTerm {
+    if majorityIndex > node.commitIndex && majorityIndex < len(node.log) && node.log[majorityIndex].Term == node.currTerm {
         node.commitIndex = majorityIndex
-        log.Info("Leader 更新 commitIndex: " + strconv.Itoa(majorityIndex))
+        log.Info("Leader" + node.selfId + "更新 commitIndex: " + strconv.Itoa(majorityIndex))
         
         // 应用日志到状态机
         node.applyCommittedLogs()
@@ -173,13 +181,22 @@ func (node *Node) applyCommittedLogs() {
 
 // RPC call
 func (node *Node) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
-    // node.mu.Lock()
-    // defer node.mu.Unlock()
+    node.mu.Lock()
+    defer node.mu.Unlock()
 
     // 1. 如果 term 过期，拒绝接受日志
     if node.currTerm > arg.Term {
         *reply = AppendEntriesReply{node.currTerm, false}
         return nil
+    }
+	
+	// todo: 这里也要持久化
+	if node.leaderId != arg.LeaderId {
+		node.leaderId = arg.LeaderId  // 记录Leader
+	}
+	
+	if node.currTerm < arg.Term {
+        node.currTerm = arg.Term
     }
 
     // 2. 检查 prevLogIndex 是否有效
@@ -197,6 +214,7 @@ func (node *Node) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply)
 
     // 4. 追加新的日志条目
     for _, raftLogEntry := range arg.Entries {
+		log.Info(node.selfId + "结点写入" + raftLogEntry.print())
         if idx < len(node.log) {
             node.log[idx] = raftLogEntry
         } else {
@@ -218,13 +236,15 @@ func (node *Node) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply)
     // 7. 提交已提交的日志
     node.applyCommittedLogs()
 
+	// 8. 在成功接受日志或心跳后，重置选举超时
+	node.resetElectionTimer()
     *reply = AppendEntriesReply{node.currTerm, true}
     return nil
 }
 
 type AppendEntriesArg struct {
 	Term         int
-	// leaderId     string
+	LeaderId     string
 	PrevLogIndex int
 	PrevLogTerm  int
 	Entries      []RaftLogEntry

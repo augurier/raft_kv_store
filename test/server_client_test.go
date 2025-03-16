@@ -24,12 +24,7 @@ func TestServerClient(t *testing.T) {
 	// 结点启动
 	var cmds []*exec.Cmd
 	for i := 0; i < n; i++ {
-		var cmd *exec.Cmd
-		if i == 0 {
-			cmd = ExecuteNodeI(i, true, true, clusters)
-		} else {
-			cmd = ExecuteNodeI(i, false, true, clusters)
-		}
+		cmd := ExecuteNodeI(i, true, clusters)
 		
 		if cmd == nil {
 			return
@@ -40,7 +35,7 @@ func TestServerClient(t *testing.T) {
 
 	time.Sleep(time.Second) // 等待启动完毕
 	// client启动
-	c := clientPkg.Client{Address: "127.0.0.1:9090", ServerId: "1"}
+	c := clientPkg.Client{Address: "127.0.0.1:9092", ServerId: "3"}
 
 	// 写入
 	var s clientPkg.Status

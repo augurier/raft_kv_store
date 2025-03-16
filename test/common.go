@@ -8,16 +8,9 @@ import (
 	"strings"
 )
 
-func ExecuteNodeI(i int, isLeader bool, isNewDb bool, clusters []string) *exec.Cmd {
-	tmpClusters := append(clusters[:i], clusters[i+1:]...)
+func ExecuteNodeI(i int, isNewDb bool, clusters []string) *exec.Cmd {
 	port := fmt.Sprintf(":%d", uint16(9090)+uint16(i))
 
-	var isleader string
-	if isLeader {
-		isleader = "true"
-	} else {
-		isleader = "false"
-	}
 	var isnewdb string
 	if isNewDb {
 		isnewdb = "true"
@@ -28,8 +21,7 @@ func ExecuteNodeI(i int, isLeader bool, isNewDb bool, clusters []string) *exec.C
 		"../main", 
 		"-id", strconv.Itoa(i + 1), 
 		"-port", port, 
-		"-cluster", strings.Join(tmpClusters, ","), 
-		"-isleader=" + isleader,
+		"-cluster", strings.Join(clusters, ","), 
 		"-isNewDb=" + isnewdb,
 	)
 	cmd.Stdout = os.Stdout

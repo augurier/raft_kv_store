@@ -26,9 +26,9 @@ func TestFollowerRestart(t *testing.T) {
 	for i := 0; i < n; i++ { 
 		var cmd *exec.Cmd
 		if i == 0 {
-			cmd = ExecuteNodeI(i, true, true, clusters)
+			cmd = ExecuteNodeI(i, true, clusters)
 		} else {
-			cmd = ExecuteNodeI(i, false, true, clusters)
+			cmd = ExecuteNodeI(i, true, clusters)
 		}
 		
 		if cmd == nil {
@@ -69,7 +69,7 @@ func TestFollowerRestart(t *testing.T) {
 		}		
 	}
 	// 恢复结点
-	cmd := ExecuteNodeI(n - 1, false, false, clusters)
+	cmd := ExecuteNodeI(n - 1, false, clusters)
 	if cmd == nil {
 		t.Errorf("recover test1 fail")
 		return

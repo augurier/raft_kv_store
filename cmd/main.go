@@ -29,10 +29,9 @@ func main() {
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 
 	port := flag.String("port", ":9091", "rpc listen port")
-	cluster := flag.String("cluster", "127.0.0.1:9092,127.0.0.1:9093", "comma sep")
+	cluster := flag.String("cluster", "127.0.0.1:9091,127.0.0.1:9092,127.0.0.1:9093", "comma sep")
 	id := flag.String("id", "1", "node ID")
 	pipe := flag.String("pipe", "", "input from scripts")
-	isLeader := flag.Bool("isleader", false, "init node state")
 	isNewDb := flag.Bool("isNewDb", true, "new test or restart")
 
 	// 参数解析
@@ -47,6 +46,7 @@ func main() {
 	for _, addr := range clusters {
 		if idCnt == selfi {
 			idCnt++ // 命令行cluster按id排序传入，记录时跳过自己的id，先保证所有节点互相记录的id一致
+			continue
 		}
 		idClusterPairs[strconv.Itoa(idCnt)] = addr 
 		idCnt++
@@ -76,7 +76,7 @@ func main() {
 	// 监听rpc
 	node.Rpc(*port)
 	// 开启 raft
-	nodes.Start(node, *isLeader)
+	nodes.Start(node)
 
 	sig := <-sigs
 	fmt.Println("node_" + *id + "接收到信号:", sig)
