@@ -22,7 +22,7 @@ func newNode(address string) *Public_node_info {
 	}
 }
 
-func Init(selfId string, nodeAddr map[string]string, pipe string, db *leveldb.DB) *Node {
+func Init(selfId string, nodeAddr map[string]string, pipe string, db *leveldb.DB, rstorage *RaftStorage) *Node {
 	ns := make(map[string]*Public_node_info)
 	for id, addr := range nodeAddr {
 		ns[id] = newNode(addr)
@@ -34,7 +34,7 @@ func Init(selfId string, nodeAddr map[string]string, pipe string, db *leveldb.DB
 		leaderId: 	 "",
 		nodes:       ns,
 		pipeAddr:    pipe,
-		maxLogId:    -1,
+		maxLogId:    -1, // 后来发现论文中是从1开始的（初始0），但不想改了
 		currTerm:    1,
 		log:         make([]RaftLogEntry, 0),
 		commitIndex: -1,
@@ -42,6 +42,7 @@ func Init(selfId string, nodeAddr map[string]string, pipe string, db *leveldb.DB
 		nextIndex:   make(map[string]int),
 		matchIndex:  make(map[string]int),
 		db:          db,
+		storage: rstorage,
 	}
 	node.initLeaderState()
 	return node
@@ -110,6 +111,7 @@ func (n *Node) initLeaderState() {
 		n.nextIndex[peerId] = len(n.log) // 发送日志的下一个索引
 		n.matchIndex[peerId] = 0         // 复制日志的最新匹配索引
 	}
+	n.storage.SetTermAndVote(n.currTerm, n.votedFor)
 }
 
 func Start(node *Node) {

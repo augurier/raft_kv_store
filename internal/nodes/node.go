@@ -62,7 +62,10 @@ type Node struct {
 	// 已经发送给每个节点的最大索引
 	matchIndex map[string]int
 
+	// 存kv（模拟状态机）
 	db *leveldb.DB
+	// 持久化节点数据（currterm votedfor log）
+	storage *RaftStorage
 
 	votedFor string
 	electionTimer *time.Timer
@@ -131,8 +134,13 @@ func (node *Node) sendKV(id string, callMode CallMode) {
 		}
 
 		if appendReply.Term != node.currTerm {
-			// 转变成follower？
-			break
+			log.Info("Leader " + node.selfId + " 收到更高的 term=" + strconv.Itoa(appendReply.Term) + "，转换为 Follower")
+			node.currTerm = appendReply.Term
+			node.state = Follower
+			node.votedFor = ""
+			node.storage.SetTermAndVote(node.currTerm, node.votedFor)
+			node.resetElectionTimer()
+			return
 		}
 		nextIndex-- // 失败往前传一格
 	}
@@ -190,14 +198,16 @@ func (node *Node) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply)
         return nil
     }
 	
-	// todo: 这里也要持久化
-	if node.leaderId != arg.LeaderId {
-		node.leaderId = arg.LeaderId  // 记录Leader
-	}
+	node.leaderId = arg.LeaderId  // 记录Leader
 	
 	if node.currTerm < arg.Term {
-        node.currTerm = arg.Term
+		log.Info("Node " + node.selfId + " 发现更高 term=" + strconv.Itoa(arg.Term))
+		node.currTerm = arg.Term
+		node.state = Follower
+		node.votedFor = ""
+		node.storage.SetTermAndVote(node.currTerm, node.votedFor)
     }
+	node.storage.SetTermAndVote(node.currTerm, node.votedFor)
 
     // 2. 检查 prevLogIndex 是否有效
     if arg.PrevLogIndex >= len(node.log) || (arg.PrevLogIndex >= 0 && node.log[arg.PrevLogIndex].Term != arg.PrevLogTerm) {
@@ -206,10 +216,13 @@ func (node *Node) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply)
     }
 
     // 3. 处理日志冲突（如果存在不同 term，则截断日志）
-    idx := arg.PrevLogIndex + 1
-    if idx < len(node.log) && node.log[idx].Term != arg.Entries[0].Term {
-        node.log = node.log[:idx] // 截断冲突日志
-    }
+	idx := arg.PrevLogIndex + 1
+	for i := idx; i < len(node.log) && i-idx < len(arg.Entries); i++ {
+		if node.log[i].Term != arg.Entries[i-idx].Term {
+			node.log = node.log[:idx]
+			break
+		}
+	}
 	// log.Info(strconv.Itoa(idx) + strconv.Itoa(len(node.log)))
 
     // 4. 追加新的日志条目
@@ -223,20 +236,23 @@ func (node *Node) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply)
         idx++
     }
 
-    // 5. 更新 maxLogId
+	// 暴力持久化
+	node.storage.WriteLog(node.log)
+
+    // 更新 maxLogId
     node.maxLogId = len(node.log) - 1
 
-    // 6. 更新 commitIndex
+    // 更新 commitIndex
     if arg.LeaderCommit < node.maxLogId {
 		node.commitIndex = arg.LeaderCommit
 	} else {
 		node.commitIndex = node.maxLogId
 	}
 
-    // 7. 提交已提交的日志
+    // 提交已提交的日志
     node.applyCommittedLogs()
 
-	// 8. 在成功接受日志或心跳后，重置选举超时
+	// 在成功接受日志或心跳后，重置选举超时
 	node.resetElectionTimer()
     *reply = AppendEntriesReply{node.currTerm, true}
     return nil

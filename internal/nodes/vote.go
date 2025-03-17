@@ -28,6 +28,7 @@ func (n *Node) startElection() {
     n.currTerm++
     n.state = Candidate
     n.votedFor = n.selfId // 自己投自己
+	n.storage.SetTermAndVote(n.currTerm, n.votedFor)
 
     log.Sugar().Infof("[%s] 开始选举，当前任期: %d", n.selfId, n.currTerm)
 
@@ -70,6 +71,7 @@ func (n *Node) startElection() {
 					n.currTerm = reply.Term
 					n.state = Follower
 					n.votedFor = ""
+					n.storage.SetTermAndVote(n.currTerm, n.votedFor)
 					n.resetElectionTimer()
 					mu.Unlock()
 					return
@@ -136,7 +138,6 @@ func (node *Node) sendRequestVote(peerId string, args *RequestVoteArgs, reply *R
 
 func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
 	n.mu.Lock()
-	log.Info(n.selfId)
     defer n.mu.Unlock()
     // 1. 如果候选人的任期小于当前任期，则拒绝投票
     if args.Term < n.currTerm {
@@ -181,6 +182,7 @@ func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
         reply.VoteGranted = false
     }
 
+	n.storage.SetTermAndVote(n.currTerm, n.votedFor)
     reply.Term = n.currTerm
 	return nil
 }

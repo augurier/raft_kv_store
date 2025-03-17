@@ -29,8 +29,9 @@ func (node *Node) WriteKV(kvCall LogEntryCall, reply *ServerReply) error {
 
 	node.maxLogId++
 	logId := node.maxLogId
-	node.log = append(node.log, RaftLogEntry{kvCall.LogE, logId, node.currTerm})
-	// node.db.Put([]byte(kvCall.LogE.Key), []byte(kvCall.LogE.Value), nil)
+	rLogE := RaftLogEntry{kvCall.LogE, logId, node.currTerm}
+	node.log = append(node.log, rLogE)
+	node.storage.AppendLog(rLogE)
 	log.Info("leader" + node.selfId + "处理请求 : " + kvCall.LogE.print() + ", 模拟方式 : " + strconv.Itoa(int(kvCall.CallState)))
 	// 广播给其它节点	
 	node.BroadCastKV(kvCall.CallState)

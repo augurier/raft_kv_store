@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/syndtr/goleveldb/leveldb"
 	"os"
 	"os/signal"
 	"simple-kv-store/internal/logprovider"
@@ -10,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"github.com/syndtr/goleveldb/leveldb"
 
 	"go.uber.org/zap"
 )
@@ -48,15 +48,16 @@ func main() {
 			idCnt++ // 命令行cluster按id排序传入，记录时跳过自己的id，先保证所有节点互相记录的id一致
 			continue
 		}
-		idClusterPairs[strconv.Itoa(idCnt)] = addr 
+		idClusterPairs[strconv.Itoa(idCnt)] = addr
 		idCnt++
 	}
 
 	if *isNewDb {
 		os.RemoveAll("leveldb/simple-kv-store" + *id)
+		os.RemoveAll("storage/node" + *id + ".json")
 	}
 	// 打开或创建每个结点自己的数据库
-	db, err := leveldb.OpenFile("leveldb/simple-kv-store" + *id, nil)
+	db, err := leveldb.OpenFile("leveldb/simple-kv-store"+*id, nil)
 	if err != nil {
 		log.Fatal("Failed to open database: ", zap.Error(err))
 	}
@@ -64,14 +65,17 @@ func main() {
 	iter := db.NewIterator(nil, nil)
 	defer iter.Release()
 
+	// 打开或创建节点数据持久化文件
+	storage := nodes.NewRaftStorage("storage/node" + *id + ".json")
+
 	// 计数
 	count := 0
 	for iter.Next() {
 		count++
 	}
-	fmt.Printf(*id + "结点目前有数据：%d\n", count)
+	fmt.Printf(*id+"结点目前有数据：%d\n", count)
 
-	node := nodes.Init(*id, idClusterPairs, *pipe, db)
+	node := nodes.Init(*id, idClusterPairs, *pipe, db, storage)
 	log.Info("id: " + *id + "节点开始监听: " + *port + "端口")
 	// 监听rpc
 	node.Rpc(*port)
@@ -79,6 +83,6 @@ func main() {
 	nodes.Start(node)
 
 	sig := <-sigs
-	fmt.Println("node_" + *id + "接收到信号:", sig)
+	fmt.Println("node_"+*id+"接收到信号:", sig)
 
 }
