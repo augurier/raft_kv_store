@@ -34,7 +34,7 @@ func (rs *RaftStorage) loadData() {
 
 	file, err := os.Open(rs.filePath)
 	if err != nil {
-		log.Info("文件不存在：" + rs.filePath)
+		log.Info("文件未创建：" + rs.filePath)
 		rs.saveData() // 文件不存在时创建默认数据
 		return
 	}
@@ -103,6 +103,7 @@ func (rs *RaftStorage) GetVotedFor() string {
 	return rs.VotedFor
 }
 
+// 同时设置
 func (rs *RaftStorage) SetTermAndVote(term int, candidate string) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()

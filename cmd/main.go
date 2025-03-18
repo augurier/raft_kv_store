@@ -31,7 +31,6 @@ func main() {
 	port := flag.String("port", ":9091", "rpc listen port")
 	cluster := flag.String("cluster", "127.0.0.1:9091,127.0.0.1:9092,127.0.0.1:9093", "comma sep")
 	id := flag.String("id", "1", "node ID")
-	pipe := flag.String("pipe", "", "input from scripts")
 	isNewDb := flag.Bool("isNewDb", true, "new test or restart")
 
 	// 参数解析
@@ -41,7 +40,7 @@ func main() {
 	idCnt := 1
 	selfi, err := strconv.Atoi(*id)
 	if err != nil {
-		log.Error("figure id only")
+		log.Fatal("figure id only")
 	}
 	for _, addr := range clusters {
 		if idCnt == selfi {
@@ -73,16 +72,16 @@ func main() {
 	for iter.Next() {
 		count++
 	}
-	fmt.Printf(*id+"结点目前有数据：%d\n", count)
+	log.Sugar().Infof("[%s]目前有数据：%d", *id, count)
 
-	node := nodes.Init(*id, idClusterPairs, *pipe, db, storage)
-	log.Info("id: " + *id + "节点开始监听: " + *port + "端口")
+	node := nodes.Init(*id, idClusterPairs, db, storage)
+	log.Sugar().Infof("[%s]开始监听" + *port + "端口", *id)
 	// 监听rpc
 	node.Rpc(*port)
 	// 开启 raft
 	nodes.Start(node)
 
 	sig := <-sigs
-	fmt.Println("node_"+*id+"接收到信号:", sig)
+	fmt.Println("node_"+ *id +"接收到信号:", sig)
 
 }

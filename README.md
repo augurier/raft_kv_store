@@ -4,21 +4,34 @@
 
 基于go语言实现分布式kv数据库  
 
+# 框架
+每个运行main.go进程作为一个节点  
+``` 
+---internal  
+    ---client 客户端使用节点提供的读写功能  
+    ---logprovider 封装了简单的日志打印，方便调试  
+    ---nodes 分布式核心代码
+        init.go 节点在main中的调用初始化，和大循环启动  
+        log.go 节点存储的entry相关数据结构  
+        node_storage.go 抽象了节点数据持久化方法，存到json文件里  
+        node.go 节点的相关数据结构  
+        replica.go 日志复制相关逻辑  
+        server_node.go 节点作为server为  client提供的功能（读写）  
+        vote.go 选主相关逻辑
+```
+
 # 环境与运行
 使用环境是wsl+ubuntu  
 go mod download安装依赖  
 ./scripts/build.sh 会在根目录下编译出main
-./scripts/run.sh 运行三个节点，目前能在终端进行读入，leader（n1）节点输出send log，其余节点输出receive log。终端输入后如果超时就退出（脚本运行时间可以在其中调整）。
 
 # 注意
 脚本第一次运行需要权限获取 chmod +x <脚本>  
 如果出现tcp listen error可能是因为之前的进程没用正常退出，占用了端口  
 lsof -i :9091查看pid  
 kill -9 <pid>杀死进程  
-## 关于测试
-通过新开进程的方式创建节点，如果通过线程创建，会出现重复注册rpc问题
 
-# todo list
-消息通讯异常的处理  
-kv本地持久化  
-崩溃与恢复（以及对应的测试）
+## 关于测试
+通过新开进程的方式创建节点（参考test/common.go中executeNodeI函数  
+如果通过线程创建，会出现重复注册rpc问题
+
