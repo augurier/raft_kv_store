@@ -1,6 +1,7 @@
 package clientPkg
 
 import (
+	"math/rand"
 	"net/rpc"
 	"simple-kv-store/internal/logprovider"
 	"simple-kv-store/internal/nodes"
@@ -12,7 +13,7 @@ var log, _ = logprovider.CreateDefaultZapLogger(zap.InfoLevel)
 
 type Client struct {
 	// 连接的server端节点群
-	Address [] string
+	Address map[string]string
 }
 
 type Status = uint8
@@ -23,23 +24,31 @@ const (
 	Fail
 )
 
+func getRandomAddress(addressMap map[string]string) string {
+	keys := make([]string, 0, len(addressMap))
+
+	// 获取所有 key
+	for key := range addressMap {
+		keys = append(keys, key)
+	}
+
+	// 随机选一个 key
+	randomKey := keys[rand.Intn(len(keys))]
+	return addressMap[randomKey]
+}
+
 func (client *Client) FindActiveNode() *rpc.Client {
 	var err error
 	var c *rpc.Client
-	i := 0
-	for { // 直到找到一个可连接的节点（保证至少一个节点活着）
-		c, err = rpc.DialHTTP("tcp", client.Address[i])
+	for  { // 直到找到一个可连接的节点（保证至少一个节点活着）
+		addr := getRandomAddress(client.Address)
+		c, err = rpc.DialHTTP("tcp", addr)
 		if err != nil {
 			log.Error("dialing: ", zap.Error(err))
-			i++
 		} else {
-			break
-		}
-		if i == len(client.Address) {
-			log.Fatal("没找到存活节点")
+			return c
 		}
 	}
-	return c
 }
 
 func (client *Client) CloseRpcClient(c *rpc.Client) {
@@ -48,7 +57,7 @@ func (client *Client) CloseRpcClient(c *rpc.Client) {
 		log.Error("client close err: ", zap.Error(err))
 	}
 }
-// 
+
 func (client *Client) Write(kvCall nodes.LogEntryCall) Status {
 	log.Info("client write request key :" + kvCall.LogE.Key)
 
@@ -108,8 +117,39 @@ func (client *Client) Read(key string, value *string) Status { // 查不到value
 			client.CloseRpcClient(c)
 			return NotFound
 		}		
+	}	
+}
+
+func (client *Client) FindLeader() string {
+	var arg struct{}
+	var reply nodes.FindLeaderReply
+	reply.Isleader = false
+	c := client.FindActiveNode()
+	var err error
+
+	for !reply.Isleader { // 根据存活节点的反馈，直到找到leader
+		callErr := c.Call("Node.FindLeader", &arg, &reply) // RPC
+		if callErr != nil { // dial和call之间可能崩溃，重新找存活节点
+			log.Error("dialing: ", zap.Error(callErr))
+			client.CloseRpcClient(c)
+			c = client.FindActiveNode()
+			continue
+		}
+
+		if !reply.Isleader { // 对方不是leader，根据反馈找leader
+			addr := client.Address[reply.LeaderId]
+			client.CloseRpcClient(c)
+			c, err = rpc.DialHTTP("tcp", addr)
+			for err != nil { // 重新找下一个存活节点
+				c = client.FindActiveNode()
+			}
+		} else { // 成功
+			client.CloseRpcClient(c)
+			return reply.LeaderId
+		}		
 	}
-	
+	log.Fatal("客户端会一直找存活节点，不会运行到这里")
+	return "fault"
 }
 
 

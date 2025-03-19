@@ -15,10 +15,12 @@ func TestNodeRestart(t *testing.T) {
 	// 登记结点信息
 	n := 5
 	var clusters []string
+	addressMap := make(map[string]string)
 	for i := 0; i < n; i++ {
 		port := fmt.Sprintf("%d", uint16(9090)+uint16(i))
 		addr := "127.0.0.1:" + port
 		clusters = append(clusters, addr)
+		addressMap[strconv.Itoa(i + 1)] = addr
 	}
 
 	// 结点启动
@@ -28,9 +30,20 @@ func TestNodeRestart(t *testing.T) {
 		cmds = append(cmds, cmd)		
 	}
 
+	// 通知所有进程结束
+	defer func(){
+		for _, cmd := range cmds {
+			err := cmd.Process.Signal(syscall.SIGTERM)
+			if err != nil {
+				fmt.Println("Error sending signal:", err)
+				return
+			}
+		}
+	}()
+
 	time.Sleep(time.Second) // 等待启动完毕
 	// client启动, 连接任意节点
-	cWrite := clientPkg.Client{Address: clusters}
+	cWrite := clientPkg.Client{Address: addressMap}
 
 	// 写入
 	var s clientPkg.Status
@@ -65,7 +78,7 @@ func TestNodeRestart(t *testing.T) {
 
 
 	// client启动
-	cRead := clientPkg.Client{Address: clusters}
+	cRead := clientPkg.Client{Address: addressMap}
 	// 读写入数据
 	for i := 0; i < 5; i++ {
 		key := strconv.Itoa(i)
@@ -83,15 +96,6 @@ func TestNodeRestart(t *testing.T) {
 		s = cRead.Read(key, &value)
 		if s != clientPkg.NotFound {
 			t.Errorf("Read test2 fail")
-		}
-	}
-
-	// 通知所有进程结束
-	for _, cmd := range cmds {
-		err := cmd.Process.Signal(syscall.SIGTERM)
-		if err != nil {
-			fmt.Println("Error sending signal:", err)
-			return
 		}
 	}
 }

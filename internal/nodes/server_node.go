@@ -57,3 +57,24 @@ func (node *Node) ReadKey(key string, reply *ServerReply) error {
 	return nil
 }
 
+// RPC call 测试中寻找当前leader
+type FindLeaderReply struct{
+	Isleader bool
+	LeaderId string
+}
+func (node *Node) FindLeader(_ struct{}, reply *FindLeaderReply) error {
+	// 自己不是leader，转交leader地址回复	
+	if node.state != Leader {
+		reply.Isleader = false
+		if (node.leaderId == "") {
+			log.Fatal("还没选出第一个leader")
+			return nil
+		}
+		reply.LeaderId = node.leaderId
+		return nil
+	}
+
+	reply.LeaderId = node.selfId
+	reply.Isleader = true
+	return nil
+}
