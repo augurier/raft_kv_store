@@ -21,7 +21,7 @@ func newNode(address string) *Public_node_info {
 	}
 }
 
-func Init(selfId string, nodeAddr map[string]string, db *leveldb.DB, rstorage *RaftStorage) *Node {
+func Init(selfId string, nodeAddr map[string]string, db *leveldb.DB, rstorage *RaftStorage, isRestart bool) *Node {
 	ns := make(map[string]*Public_node_info)
 	for id, addr := range nodeAddr {
 		ns[id] = newNode(addr)
@@ -43,6 +43,13 @@ func Init(selfId string, nodeAddr map[string]string, db *leveldb.DB, rstorage *R
 		storage: rstorage,
 	}
 	node.initLeaderState()
+	if isRestart {
+		node.currTerm = rstorage.GetCurrentTerm()
+		node.votedFor = rstorage.GetVotedFor()
+		node.log = rstorage.GetLogEntries()
+		log.Sugar().Infof("[%s]从重启中恢复log数量: %d", selfId, len(node.log))
+	}
+
 	return node
 }
 
@@ -51,7 +58,6 @@ func (n *Node) initLeaderState() {
 		n.nextIndex[peerId] = len(n.log) // 发送日志的下一个索引
 		n.matchIndex[peerId] = 0         // 复制日志的最新匹配索引
 	}
-	n.storage.SetTermAndVote(n.currTerm, n.votedFor)
 }
 
 func Start(node *Node) {

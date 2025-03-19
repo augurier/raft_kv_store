@@ -42,7 +42,7 @@ func (rs *RaftStorage) loadData() {
 
 	err = json.NewDecoder(file).Decode(rs)
 	if err != nil {
-		log.Error("读取文件失败：" + rs.filePath)
+		log.Error("读取文件失败：" + rs.filePath, zap.Error(err))
 	}
 }
 

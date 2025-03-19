@@ -106,6 +106,8 @@ func (n *Node) startElection() {
 		select {
 		case <-timeout:
 			log.Sugar().Infof("[%s] 选举超时，重新发起选举", n.selfId)
+			n.state = Follower
+			n.resetElectionTimer()
 			mu.Unlock()
 			return
 		default:

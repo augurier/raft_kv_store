@@ -31,7 +31,7 @@ func main() {
 	port := flag.String("port", ":9091", "rpc listen port")
 	cluster := flag.String("cluster", "127.0.0.1:9091,127.0.0.1:9092,127.0.0.1:9093", "comma sep")
 	id := flag.String("id", "1", "node ID")
-	isNewDb := flag.Bool("isNewDb", true, "new test or restart")
+	isRestart := flag.Bool("isRestart", true, "new test or restart")
 
 	// 参数解析
 	flag.Parse()
@@ -51,11 +51,14 @@ func main() {
 		idCnt++
 	}
 
-	if *isNewDb {
-		os.RemoveAll("leveldb/simple-kv-store" + *id)
+	if *isRestart {	
 		os.RemoveAll("storage/node" + *id + ".json")
 	}
-	// 打开或创建每个结点自己的数据库
+
+	// 创建每个结点自己的数据库。这里一开始理解上有些误区，状态机的状态恢复应该靠节点的持久化log，
+	// 而用leveldb模拟状态机，造成了状态机本身的持久化，因此暂时通过删去旧db避免这一矛盾
+	os.RemoveAll("leveldb/simple-kv-store" + *id)
+
 	db, err := leveldb.OpenFile("leveldb/simple-kv-store"+*id, nil)
 	if err != nil {
 		log.Fatal("Failed to open database: ", zap.Error(err))
@@ -67,14 +70,9 @@ func main() {
 	// 打开或创建节点数据持久化文件
 	storage := nodes.NewRaftStorage("storage/node" + *id + ".json")
 
-	// 计数
-	count := 0
-	for iter.Next() {
-		count++
-	}
-	log.Sugar().Infof("[%s]目前有数据：%d", *id, count)
+	// 初始化
+	node := nodes.Init(*id, idClusterPairs, db, storage, !*isRestart)
 
-	node := nodes.Init(*id, idClusterPairs, db, storage)
 	log.Sugar().Infof("[%s]开始监听" + *port + "端口", *id)
 	// 监听rpc
 	node.Rpc(*port)
