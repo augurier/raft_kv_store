@@ -56,7 +56,6 @@ func (n *Node) startElection() {
 
     // 并行向其他节点发送请求投票
     var mu sync.Mutex
-    cond := sync.NewCond(&mu)
     totalNodes := len(n.nodes)
     grantedVotes := 1 // 自己的票
 
@@ -86,7 +85,6 @@ func (n *Node) startElection() {
 					n.state = Leader
 					log.Sugar().Infof("[%s] 当选 Leader!", n.selfId)
 					n.initLeaderState()
-					cond.Broadcast()
 				}
 	
 				mu.Unlock()
@@ -95,31 +93,19 @@ func (n *Node) startElection() {
 	}
 	
 	// 等待选举结果
-	timeout := time.After(300 * time.Millisecond)
-	
-	for {
-		mu.Lock()
-		if n.state != Candidate { // 选举成功或回退，不再等待
-			mu.Unlock()
-			return
-		}
-		select {
-		case <-timeout:
-			log.Sugar().Infof("[%s] 选举超时，重新发起选举", n.selfId)
-			n.state = Follower
-			n.resetElectionTimer()
-			mu.Unlock()
-			return
-		default:
-			cond.Wait()
-		}
-		mu.Unlock()
+	time.Sleep(300 * time.Millisecond)
+	mu.Lock()
+	if n.state == Candidate {
+		log.Sugar().Infof("[%s] 选举超时，重新发起选举", n.selfId)
+		// n.state = Follower 这里不修改，如果appendentries收到term合理的心跳，再变回follower
+		n.resetElectionTimer()
 	}
+	mu.Unlock()
 }
 
 func (node *Node) sendRequestVote(peerId string, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	log.Sugar().Infof("[%s] 请求 [%s] 投票给自己", node.selfId, peerId)
-	client, err := rpc.DialHTTP("tcp", node.nodes[peerId].address)
+	client, err := DialHTTPWithTimeout("tcp", node.nodes[peerId].address)
 	if err != nil {
 		log.Error("dialing: ", zap.Error(err))
 		return false
@@ -132,7 +118,7 @@ func (node *Node) sendRequestVote(peerId string, args *RequestVoteArgs, reply *R
 		}
 	}(client)
 
-	callErr := client.Call("Node.RequestVote", args, reply) // RPC
+	callErr := CallWithTimeout(client, "Node.RequestVote", args, reply) // RPC
 	if callErr != nil {
 		log.Error("dialing node_"+peerId+"fail: ", zap.Error(callErr))
 	}

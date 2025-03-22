@@ -47,7 +47,7 @@ func (node *Node) sendKV(id string, callMode CallMode) {
 	default:
 	}
 
-	client, err := rpc.DialHTTP("tcp", node.nodes[id].address)
+	client, err := DialHTTPWithTimeout("tcp", node.nodes[id].address)
 	if err != nil {
 		log.Error("dialing: ", zap.Error(err))
 		return
@@ -82,7 +82,7 @@ func (node *Node) sendKV(id string, callMode CallMode) {
 		if arg.PrevLogIndex >= 0 {
 			arg.PrevLogTerm = node.log[arg.PrevLogIndex].Term
 		}
-		callErr := client.Call("Node.AppendEntries", arg, &appendReply) // RPC
+		callErr := CallWithTimeout(client, "Node.AppendEntries", &arg, &appendReply) // RPC
 		if callErr != nil {
 			log.Error("dialing node_"+ id +"fail: ", zap.Error(callErr))
 		}
@@ -142,7 +142,11 @@ func (node *Node) applyCommittedLogs() {
 }
 
 // RPC call
-func (node *Node) AppendEntries(arg AppendEntriesArg, reply *AppendEntriesReply) error {
+func (node *Node) AppendEntries(arg *AppendEntriesArg, reply *AppendEntriesReply) error {
+	// start := time.Now()
+	// defer func() {
+	// 	log.Sugar().Infof("AppendEntries 处理时间: %v", time.Since(start))
+	// }()
     node.mu.Lock()
     defer node.mu.Unlock()
 

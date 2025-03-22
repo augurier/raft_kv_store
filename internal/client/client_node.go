@@ -42,10 +42,11 @@ func (client *Client) FindActiveNode() *rpc.Client {
 	var c *rpc.Client
 	for  { // 直到找到一个可连接的节点（保证至少一个节点活着）
 		addr := getRandomAddress(client.Address)
-		c, err = rpc.DialHTTP("tcp", addr)
+		c, err = nodes.DialHTTPWithTimeout("tcp", addr)
 		if err != nil {
 			log.Error("dialing: ", zap.Error(err))
 		} else {
+			log.Sugar().Info("client发现活跃节点地址[%s]", addr)
 			return c
 		}
 	}
@@ -67,7 +68,7 @@ func (client *Client) Write(kvCall nodes.LogEntryCall) Status {
 	var err error
 
 	for !reply.Isleader { // 根据存活节点的反馈，直到找到leader
-		callErr := c.Call("Node.WriteKV", kvCall, &reply) // RPC
+		callErr := nodes.CallWithTimeout(c, "Node.WriteKV", &kvCall, &reply) // RPC
 		if callErr != nil { // dial和call之间可能崩溃，重新找存活节点
 			log.Error("dialing: ", zap.Error(callErr))
 			client.CloseRpcClient(c)
@@ -78,7 +79,7 @@ func (client *Client) Write(kvCall nodes.LogEntryCall) Status {
 		if !reply.Isleader { // 对方不是leader，根据反馈找leader
 			addr := reply.LeaderAddress
 			client.CloseRpcClient(c)
-			c, err = rpc.DialHTTP("tcp", addr)
+			c, err = nodes.DialHTTPWithTimeout("tcp", addr)
 			for err != nil { // 重新找下一个存活节点
 				c = client.FindActiveNode()
 			}
@@ -101,7 +102,7 @@ func (client *Client) Read(key string, value *string) Status { // 查不到value
 		c = client.FindActiveNode()
 
 		var reply nodes.ServerReply
-		callErr := c.Call("Node.ReadKey", key, &reply) // RPC
+		callErr := nodes.CallWithTimeout(c, "Node.ReadKey", &key, &reply) // RPC
 		if callErr != nil {
 			log.Error("dialing: ", zap.Error(callErr))
 			client.CloseRpcClient(c)
@@ -128,7 +129,7 @@ func (client *Client) FindLeader() string {
 	var err error
 
 	for !reply.Isleader { // 根据存活节点的反馈，直到找到leader
-		callErr := c.Call("Node.FindLeader", &arg, &reply) // RPC
+		callErr := nodes.CallWithTimeout(c, "Node.FindLeader", &arg, &reply) // RPC
 		if callErr != nil { // dial和call之间可能崩溃，重新找存活节点
 			log.Error("dialing: ", zap.Error(callErr))
 			client.CloseRpcClient(c)
@@ -139,7 +140,7 @@ func (client *Client) FindLeader() string {
 		if !reply.Isleader { // 对方不是leader，根据反馈找leader
 			addr := client.Address[reply.LeaderId]
 			client.CloseRpcClient(c)
-			c, err = rpc.DialHTTP("tcp", addr)
+			c, err = nodes.DialHTTPWithTimeout("tcp", addr)
 			for err != nil { // 重新找下一个存活节点
 				c = client.FindActiveNode()
 			}

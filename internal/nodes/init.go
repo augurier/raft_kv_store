@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	// "context"
 	"fmt"
 	"net"
 	"net/http"
@@ -30,7 +31,7 @@ func Init(selfId string, nodeAddr map[string]string, db *leveldb.DB, rstorage *R
 	// 创建节点
 	node := &Node{
 		selfId:      selfId,
-		leaderId: 	 "",
+		leaderId:    "",
 		nodes:       ns,
 		maxLogId:    -1, // 后来发现论文中是从1开始的（初始0），但不想改了
 		currTerm:    1,
@@ -40,7 +41,7 @@ func Init(selfId string, nodeAddr map[string]string, db *leveldb.DB, rstorage *R
 		nextIndex:   make(map[string]int),
 		matchIndex:  make(map[string]int),
 		db:          db,
-		storage: rstorage,
+		storage:     rstorage,
 	}
 	node.initLeaderState()
 	if isRestart {
@@ -74,6 +75,7 @@ func Start(node *Node) {
 			case Leader:
 				// 发送心跳
 				fmt.Printf("[%s] is the leader, 发送心跳...\n", node.selfId)
+				node.resetElectionTimer() // leader不主动触发选举
 				node.BroadCastKV(Normal)
 			}
 			time.Sleep(50 * time.Millisecond)
@@ -81,7 +83,9 @@ func Start(node *Node) {
 	}()
 }
 
+// 初始时注册rpc方法
 func (node *Node) Rpc(port string) {
+
 	err := rpc.Register(node)
 	if err != nil {
 		log.Fatal("rpc register failed", zap.Error(err))
@@ -98,4 +102,39 @@ func (node *Node) Rpc(port string) {
 			log.Fatal("http server error:", zap.Error(err))
 		}
 	}()
+}
+
+// 封装有超时的dial
+func DialHTTPWithTimeout(network, address string) (*rpc.Client, error) {
+	done := make(chan struct{})
+	var client *rpc.Client
+	var err error
+
+	go func() {
+		client, err = rpc.DialHTTP(network, address)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return client, err
+	case <-time.After(50 * time.Millisecond):
+		return nil, fmt.Errorf("dial timeout: %s", address)
+	}
+}
+
+// 封装有超时的call
+func CallWithTimeout[T1 any, T2 any](client *rpc.Client, serviceMethod string, args *T1, reply *T2) error {
+	done := make(chan error, 1)
+
+	go func() {
+		done <- client.Call(serviceMethod, args, reply)
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(50 * time.Millisecond):
+		return fmt.Errorf("call timeout: %s", serviceMethod)
+	}
 }

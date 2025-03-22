@@ -14,7 +14,7 @@ type ServerReply struct{
 	Value string
 }
 // RPC call
-func (node *Node) WriteKV(kvCall LogEntryCall, reply *ServerReply) error {
+func (node *Node) WriteKV(kvCall *LogEntryCall, reply *ServerReply) error {
 	log.Sugar().Infof("[%s]收到客户端write请求", node.selfId)
 
 	// 自己不是leader，转交leader地址回复	
@@ -43,10 +43,10 @@ func (node *Node) WriteKV(kvCall LogEntryCall, reply *ServerReply) error {
 }
 
 // RPC call
-func (node *Node) ReadKey(key string, reply *ServerReply) error {
+func (node *Node) ReadKey(key *string, reply *ServerReply) error {
 	log.Sugar().Infof("[%s]收到客户端read请求", node.selfId)
 	// 先只读自己(无论自己是不是leader)，也方便测试
-	value, err := node.db.Get([]byte(key), nil)
+	value, err := node.db.Get([]byte(*key), nil)
 	if err == leveldb.ErrNotFound {
 		reply.HaveValue = false
 	} else {
