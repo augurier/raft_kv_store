@@ -15,11 +15,6 @@ const (
 	Leader
 )
 
-type Public_node_info struct {
-	connect bool
-	address string
-}
-
 type Node struct {
 	mu    sync.Mutex
 	// 当前节点id
@@ -27,8 +22,8 @@ type Node struct {
 	// 记录的leader(不能用votedfor：投票的leader可能没有收到多数票)
 	leaderId string
 
-	// 除当前节点外其他节点信息
-	nodes map[string]*Public_node_info
+	// 除当前节点外其他节点id
+	nodes []string
 
 	// 当前节点状态
 	state State
@@ -61,5 +56,8 @@ type Node struct {
 
 	votedFor string
 	electionTimer *time.Timer
+
+	// 通信方式
+	transport Transport
 }
 

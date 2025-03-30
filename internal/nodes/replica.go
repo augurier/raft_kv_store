@@ -2,7 +2,6 @@ package nodes
 
 import (
 	"math/rand"
-	"net/rpc"
 	"sort"
 	"strconv"
 	"time"
@@ -27,14 +26,14 @@ type AppendEntriesReply struct {
 // leader收到新内容要广播，以及心跳广播（同步自己的log)
 func (node *Node) BroadCastKV(callMode CallMode) {
 	// 遍历所有节点
-	for id := range node.nodes {
+	for _, id := range node.nodes {
 		go func(id string, kv CallMode) {
 			node.sendKV(id, callMode)
 		}(id, callMode)
 	}
 }
 
-func (node *Node) sendKV(id string, callMode CallMode) {
+func (node *Node) sendKV(peerId string, callMode CallMode) {
 
 	switch callMode {
 	case Fail:
@@ -47,13 +46,13 @@ func (node *Node) sendKV(id string, callMode CallMode) {
 	default:
 	}
 
-	client, err := DialHTTPWithTimeout("tcp", node.nodes[id].address)
+	client, err := node.transport.DialHTTPWithTimeout("tcp", peerId)
 	if err != nil {
-		log.Error("dialing: ", zap.Error(err))
+		log.Error(node.selfId + "dialling [" + peerId + "] fail: ", zap.Error(err))
 		return
 	}
 
-	defer func(client *rpc.Client) {
+	defer func(client ClientInterface) {
 		err := client.Close()
 		if err != nil {
 			log.Error("client close err: ", zap.Error(err))
@@ -65,7 +64,7 @@ func (node *Node) sendKV(id string, callMode CallMode) {
 
 	var appendReply AppendEntriesReply
 	appendReply.Success = false
-	nextIndex := node.nextIndex[id]
+	nextIndex := node.nextIndex[peerId]
 	// log.Info("nextindex " + strconv.Itoa(nextIndex))
 	for (!appendReply.Success) {
 		if nextIndex < 0 {
@@ -82,13 +81,14 @@ func (node *Node) sendKV(id string, callMode CallMode) {
 		if arg.PrevLogIndex >= 0 {
 			arg.PrevLogTerm = node.log[arg.PrevLogIndex].Term
 		}
-		callErr := CallWithTimeout(client, "Node.AppendEntries", &arg, &appendReply) // RPC
+		callErr := node.transport.CallWithTimeout(client, "Node.AppendEntries", &arg, &appendReply) // RPC
 		if callErr != nil {
-			log.Error("dialing node_"+ id +"fail: ", zap.Error(callErr))
+			log.Error(node.selfId + "calling [" + peerId + "] fail: ", zap.Error(callErr))
+			return
 		}
 
 		if appendReply.Term != node.currTerm {
-			log.Info("Leader[" + node.selfId + "]收到更高的 term=" + strconv.Itoa(appendReply.Term) + "，转换为 Follower")
+			log.Info("term=" + strconv.Itoa(node.currTerm) + "的Leader[" + node.selfId + "]收到更高的 term=" + strconv.Itoa(appendReply.Term) + "，转换为 Follower")
 			node.currTerm = appendReply.Term
 			node.state = Follower
 			node.votedFor = ""
@@ -100,8 +100,8 @@ func (node *Node) sendKV(id string, callMode CallMode) {
 	}
 	
 	// 不变成follower情况下
-	node.nextIndex[id] = node.maxLogId + 1
-	node.matchIndex[id] = node.maxLogId
+	node.nextIndex[peerId] = node.maxLogId + 1
+	node.matchIndex[peerId] = node.maxLogId
 	node.updateCommitIndex()
 }
 
@@ -164,7 +164,7 @@ func (node *Node) AppendEntries(arg *AppendEntriesArg, reply *AppendEntriesReply
 		node.currTerm = arg.Term
 		node.state = Follower
 		node.votedFor = ""
-		node.storage.SetTermAndVote(node.currTerm, node.votedFor)
+		// node.storage.SetTermAndVote(node.currTerm, node.votedFor)
     }
 	node.storage.SetTermAndVote(node.currTerm, node.votedFor)
 

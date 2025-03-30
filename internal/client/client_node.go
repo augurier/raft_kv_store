@@ -2,7 +2,6 @@ package clientPkg
 
 import (
 	"math/rand"
-	"net/rpc"
 	"simple-kv-store/internal/logprovider"
 	"simple-kv-store/internal/nodes"
 
@@ -13,7 +12,8 @@ var log, _ = logprovider.CreateDefaultZapLogger(zap.InfoLevel)
 
 type Client struct {
 	// 连接的server端节点群
-	Address map[string]string
+	PeerIds []string
+	Transport nodes.Transport
 }
 
 type Status = uint8
@@ -24,35 +24,28 @@ const (
 	Fail
 )
 
-func getRandomAddress(addressMap map[string]string) string {
-	keys := make([]string, 0, len(addressMap))
-
-	// 获取所有 key
-	for key := range addressMap {
-		keys = append(keys, key)
-	}
-
-	// 随机选一个 key
-	randomKey := keys[rand.Intn(len(keys))]
-	return addressMap[randomKey]
+func getRandomAddress(peerIds []string) string {
+	// 随机选一个 id
+	randomKey := peerIds[rand.Intn(len(peerIds))]
+	return randomKey
 }
 
-func (client *Client) FindActiveNode() *rpc.Client {
+func (client *Client) FindActiveNode() nodes.ClientInterface {
 	var err error
-	var c *rpc.Client
+	var c nodes.ClientInterface
 	for  { // 直到找到一个可连接的节点（保证至少一个节点活着）
-		addr := getRandomAddress(client.Address)
-		c, err = nodes.DialHTTPWithTimeout("tcp", addr)
+		peerId := getRandomAddress(client.PeerIds)
+		c, err = client.Transport.DialHTTPWithTimeout("tcp", peerId)
 		if err != nil {
 			log.Error("dialing: ", zap.Error(err))
 		} else {
-			log.Sugar().Info("client发现活跃节点地址[%s]", addr)
+			log.Sugar().Infof("client发现活跃节点[%s]", peerId)
 			return c
 		}
 	}
 }
 
-func (client *Client) CloseRpcClient(c *rpc.Client) {
+func (client *Client) CloseRpcClient(c nodes.ClientInterface) {
 	err := c.Close()
 	if err != nil {
 		log.Error("client close err: ", zap.Error(err))
@@ -68,7 +61,7 @@ func (client *Client) Write(kvCall nodes.LogEntryCall) Status {
 	var err error
 
 	for !reply.Isleader { // 根据存活节点的反馈，直到找到leader
-		callErr := nodes.CallWithTimeout(c, "Node.WriteKV", &kvCall, &reply) // RPC
+		callErr := client.Transport.CallWithTimeout(c, "Node.WriteKV", &kvCall, &reply) // RPC
 		if callErr != nil { // dial和call之间可能崩溃，重新找存活节点
 			log.Error("dialing: ", zap.Error(callErr))
 			client.CloseRpcClient(c)
@@ -77,9 +70,9 @@ func (client *Client) Write(kvCall nodes.LogEntryCall) Status {
 		}
 
 		if !reply.Isleader { // 对方不是leader，根据反馈找leader
-			addr := reply.LeaderAddress
+			leaderId := reply.LeaderId
 			client.CloseRpcClient(c)
-			c, err = nodes.DialHTTPWithTimeout("tcp", addr)
+			c, err = client.Transport.DialHTTPWithTimeout("tcp", leaderId)
 			for err != nil { // 重新找下一个存活节点
 				c = client.FindActiveNode()
 			}
@@ -97,12 +90,12 @@ func (client *Client) Read(key string, value *string) Status { // 查不到value
 	if value == nil {
         return Fail
     }
-	var c *rpc.Client
+	var c nodes.ClientInterface
 	for {
 		c = client.FindActiveNode()
 
 		var reply nodes.ServerReply
-		callErr := nodes.CallWithTimeout(c, "Node.ReadKey", &key, &reply) // RPC
+		callErr := client.Transport.CallWithTimeout(c, "Node.ReadKey", &key, &reply) // RPC
 		if callErr != nil {
 			log.Error("dialing: ", zap.Error(callErr))
 			client.CloseRpcClient(c)
@@ -129,7 +122,7 @@ func (client *Client) FindLeader() string {
 	var err error
 
 	for !reply.Isleader { // 根据存活节点的反馈，直到找到leader
-		callErr := nodes.CallWithTimeout(c, "Node.FindLeader", &arg, &reply) // RPC
+		callErr := client.Transport.CallWithTimeout(c, "Node.FindLeader", &arg, &reply) // RPC
 		if callErr != nil { // dial和call之间可能崩溃，重新找存活节点
 			log.Error("dialing: ", zap.Error(callErr))
 			client.CloseRpcClient(c)
@@ -138,9 +131,8 @@ func (client *Client) FindLeader() string {
 		}
 
 		if !reply.Isleader { // 对方不是leader，根据反馈找leader
-			addr := client.Address[reply.LeaderId]
 			client.CloseRpcClient(c)
-			c, err = nodes.DialHTTPWithTimeout("tcp", addr)
+			c, err = client.Transport.DialHTTPWithTimeout("tcp", reply.LeaderId)
 			for err != nil { // 重新找下一个存活节点
 				c = client.FindActiveNode()
 			}

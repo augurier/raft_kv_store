@@ -9,7 +9,7 @@ import (
 // leader node作为server为client注册的方法
 type ServerReply struct{
 	Isleader bool
-	LeaderAddress string // 自己不是leader则返回leader地址
+	LeaderId string // 自己不是leader则返回leader
 	HaveValue bool
 	Value string
 }
@@ -24,7 +24,7 @@ func (node *Node) WriteKV(kvCall *LogEntryCall, reply *ServerReply) error {
 			log.Fatal("还没选出第一个leader")
 			return nil
 		}
-		reply.LeaderAddress = node.nodes[node.leaderId].address
+		reply.LeaderId = node.leaderId
 		log.Sugar().Infof("[%s]转交给[%s]", node.selfId, node.leaderId)
 		return nil
 	}

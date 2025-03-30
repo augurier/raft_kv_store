@@ -31,7 +31,7 @@ func main() {
 	port := flag.String("port", ":9091", "rpc listen port")
 	cluster := flag.String("cluster", "127.0.0.1:9091,127.0.0.1:9092,127.0.0.1:9093", "comma sep")
 	id := flag.String("id", "1", "node ID")
-	isRestart := flag.Bool("isRestart", true, "new test or restart")
+	isRestart := flag.Bool("isRestart", false, "new test or restart")
 
 	// 参数解析
 	flag.Parse()
@@ -51,7 +51,7 @@ func main() {
 		idCnt++
 	}
 
-	if *isRestart {	
+	if !*isRestart {	
 		os.RemoveAll("storage/node" + *id + ".json")
 	}
 
@@ -59,27 +59,24 @@ func main() {
 	// 而用leveldb模拟状态机，造成了状态机本身的持久化，因此暂时通过删去旧db避免这一矛盾
 	os.RemoveAll("leveldb/simple-kv-store" + *id)
 
-	db, err := leveldb.OpenFile("leveldb/simple-kv-store"+*id, nil)
+	db, err := leveldb.OpenFile("leveldb/simple-kv-store" + *id, nil)
 	if err != nil {
 		log.Fatal("Failed to open database: ", zap.Error(err))
 	}
 	defer db.Close() // 确保数据库在使用完毕后关闭
-	iter := db.NewIterator(nil, nil)
-	defer iter.Release()
 
 	// 打开或创建节点数据持久化文件
 	storage := nodes.NewRaftStorage("storage/node" + *id + ".json")
 
 	// 初始化
-	node := nodes.Init(*id, idClusterPairs, db, storage, !*isRestart)
+	node := nodes.InitRPCNode(*id, *port, idClusterPairs, db, storage, !*isRestart)
 
-	log.Sugar().Infof("[%s]开始监听" + *port + "端口", *id)
-	// 监听rpc
-	node.Rpc(*port)
 	// 开启 raft
-	nodes.Start(node)
+	quitChan := make(chan struct{}, 1)
+	nodes.Start(node, quitChan)
 
 	sig := <-sigs
 	fmt.Println("node_"+ *id +"接收到信号:", sig)
+	close(quitChan)
 
 }

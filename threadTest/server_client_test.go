@@ -1,12 +1,9 @@
-package test
+package threadTest
 
 import (
-	"fmt"
-	"os/exec"
 	"simple-kv-store/internal/client"
 	"simple-kv-store/internal/nodes"
 	"strconv"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -14,38 +11,29 @@ import (
 func TestServerClient(t *testing.T) {
 	// 登记结点信息
 	n := 5
-	var clusters []string
 	var peerIds []string
-	addressMap := make(map[string]string)
 	for i := 0; i < n; i++ {
-		port := fmt.Sprintf("%d", uint16(9090)+uint16(i))
-		addr := "127.0.0.1:" + port
-		clusters = append(clusters, addr)
-		addressMap[strconv.Itoa(i + 1)] = addr
 		peerIds = append(peerIds, strconv.Itoa(i + 1))
 	}
 
 	// 结点启动
-	var cmds []*exec.Cmd
+	var quitCollections []chan struct{}
+	threadTransport := nodes.NewThreadTransport()
 	for i := 0; i < n; i++ {
-		cmd := ExecuteNodeI(i, false, clusters)
-		cmds = append(cmds, cmd)
+		_, quitChan := ExecuteNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
+		quitCollections = append(quitCollections, quitChan)
 	}
 
-	// 通知所有进程结束
+	// 通知所有node结束
 	defer func(){
-		for _, cmd := range cmds {
-			err := cmd.Process.Signal(syscall.SIGTERM)
-			if err != nil {
-				fmt.Println("Error sending signal:", err)
-				return
-			}
+		for _, quitChan := range quitCollections {
+			close(quitChan)
 		}
 	}()
 
 	time.Sleep(time.Second) // 等待启动完毕
 	// client启动
-	c := clientPkg.Client{PeerIds: peerIds, Transport: &nodes.HTTPTransport{NodeMap:  addressMap}}
+	c := clientPkg.Client{PeerIds: peerIds, Transport: threadTransport}
 
 	// 写入
 	var s clientPkg.Status

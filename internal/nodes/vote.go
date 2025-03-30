@@ -2,7 +2,6 @@ package nodes
 
 import (
 	"math/rand"
-	"net/rpc"
 	"strconv"
 	"sync"
 	"time"
@@ -59,7 +58,7 @@ func (n *Node) startElection() {
     totalNodes := len(n.nodes)
     grantedVotes := 1 // 自己的票
 
-    for peerId := range n.nodes {
+    for _, peerId := range n.nodes {
 		go func(peerId string) {
 			reply := RequestVoteReply{}
 			if n.sendRequestVote(peerId, &args, &reply) {
@@ -104,23 +103,23 @@ func (n *Node) startElection() {
 }
 
 func (node *Node) sendRequestVote(peerId string, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	log.Sugar().Infof("[%s] 请求 [%s] 投票给自己", node.selfId, peerId)
-	client, err := DialHTTPWithTimeout("tcp", node.nodes[peerId].address)
+	log.Sugar().Infof("[%s] 请求 [%s] 投票", node.selfId, peerId)
+	client, err := node.transport.DialHTTPWithTimeout("tcp", peerId)
 	if err != nil {
-		log.Error("dialing: ", zap.Error(err))
+		log.Error(node.selfId + "dialing [" + peerId + "] fail: ", zap.Error(err))
 		return false
 	}
 
-	defer func(client *rpc.Client) {
+	defer func(client ClientInterface) {
 		err := client.Close()
 		if err != nil {
 			log.Error("client close err: ", zap.Error(err))
 		}
 	}(client)
 
-	callErr := CallWithTimeout(client, "Node.RequestVote", args, reply) // RPC
+	callErr := node.transport.CallWithTimeout(client, "Node.RequestVote", args, reply) // RPC
 	if callErr != nil {
-		log.Error("dialing node_"+peerId+"fail: ", zap.Error(callErr))
+		log.Error(node.selfId + "calling [" + peerId + "] fail: ", zap.Error(callErr))
 	}
     return callErr == nil
 }
