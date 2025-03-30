@@ -16,48 +16,48 @@ const (
 )
 
 type Node struct {
-	mu    sync.Mutex
+	Mu    sync.Mutex
 	// 当前节点id
-	selfId string
+	SelfId string
 	// 记录的leader(不能用votedfor：投票的leader可能没有收到多数票)
-	leaderId string
+	LeaderId string
 
 	// 除当前节点外其他节点id
-	nodes []string
+	Nodes []string
 
 	// 当前节点状态
-	state State
+	State State
 
 	// 任期
-	currTerm int
+	CurrTerm int
 
 	// 简单的kv存储
-	log []RaftLogEntry
+	Log []RaftLogEntry
 
 	// leader用来标记新log, = log.len
-	maxLogId int
+	MaxLogId int
 
 	// 已提交的index
-	commitIndex int
+	CommitIndex int
 
 	// 最后应用（写到db）的index
-	lastApplied int	
+	LastApplied int	
 
 	// 需要发送给每个节点的下一个索引
-	nextIndex map[string]int
+	NextIndex map[string]int
 
 	// 已经发送给每个节点的最大索引
-	matchIndex map[string]int
+	MatchIndex map[string]int
 
 	// 存kv（模拟状态机）
-	db *leveldb.DB
+	Db *leveldb.DB
 	// 持久化节点数据（currterm votedfor log）
-	storage *RaftStorage
+	Storage *RaftStorage
 
-	votedFor string
-	electionTimer *time.Timer
+	VotedFor string
+	ElectionTimer *time.Timer
 
 	// 通信方式
-	transport Transport
+	Transport Transport
 }
 

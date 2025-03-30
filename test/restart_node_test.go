@@ -52,7 +52,7 @@ func TestNodeRestart(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		key := strconv.Itoa(i)
 		newlog := nodes.LogEntry{Key: key, Value: "hello"}
-		s := cWrite.Write(nodes.LogEntryCall{LogE: newlog, CallState: nodes.Normal})
+		s := cWrite.Write(nodes.LogEntryCall{LogE: newlog})
 		if s != clientPkg.Ok {
 			t.Errorf("write test fail")
 		}		

@@ -22,15 +22,15 @@ type RequestVoteReply struct {
 }
 
 func (n *Node) startElection() {
-	n.mu.Lock()
-    defer n.mu.Unlock()
+	n.Mu.Lock()
+    defer n.Mu.Unlock()
     // 增加当前任期，转换为 Candidate
-    n.currTerm++
-    n.state = Candidate
-    n.votedFor = n.selfId // 自己投自己
-	n.storage.SetTermAndVote(n.currTerm, n.votedFor)
+    n.CurrTerm++
+    n.State = Candidate
+    n.VotedFor = n.SelfId // 自己投自己
+	n.Storage.SetTermAndVote(n.CurrTerm, n.VotedFor)
 
-    log.Sugar().Infof("[%s] 开始选举，当前任期: %d", n.selfId, n.currTerm)
+    log.Sugar().Infof("[%s] 开始选举，当前任期: %d", n.SelfId, n.CurrTerm)
 
     // 重新设置选举超时，防止重复选举
     n.resetElectionTimer()
@@ -39,40 +39,40 @@ func (n *Node) startElection() {
 	var lastLogIndex int
 	var lastLogTerm int
 
-	if len(n.log) == 0 {
+	if len(n.Log) == 0 {
 		lastLogIndex = 0
 		lastLogTerm = 0 // 论文中定义，空日志时 Term 设为 0
 	} else {
-		lastLogIndex = len(n.log) - 1
-		lastLogTerm = n.log[lastLogIndex].Term
+		lastLogIndex = len(n.Log) - 1
+		lastLogTerm = n.Log[lastLogIndex].Term
 	}
     args := RequestVoteArgs{
-        Term:        n.currTerm,
-        CandidateId: n.selfId,
+        Term:        n.CurrTerm,
+        CandidateId: n.SelfId,
         LastLogIndex: lastLogIndex,
         LastLogTerm:  lastLogTerm,
     }
 
     // 并行向其他节点发送请求投票
-    var mu sync.Mutex
-    totalNodes := len(n.nodes)
+    var Mu sync.Mutex
+    totalNodes := len(n.Nodes)
     grantedVotes := 1 // 自己的票
 
-    for _, peerId := range n.nodes {
+    for _, peerId := range n.Nodes {
 		go func(peerId string) {
 			reply := RequestVoteReply{}
 			if n.sendRequestVote(peerId, &args, &reply) {
-				mu.Lock()
+				Mu.Lock()
 				
-				if reply.Term > n.currTerm {
+				if reply.Term > n.CurrTerm {
 					// 发现更高任期，回退为 Follower
-					log.Sugar().Infof("[%s] 发现更高的 Term (%d)，回退为 Follower", n.selfId, reply.Term)
-					n.currTerm = reply.Term
-					n.state = Follower
-					n.votedFor = ""
-					n.storage.SetTermAndVote(n.currTerm, n.votedFor)
+					log.Sugar().Infof("[%s] 发现更高的 Term (%d)，回退为 Follower", n.SelfId, reply.Term)
+					n.CurrTerm = reply.Term
+					n.State = Follower
+					n.VotedFor = ""
+					n.Storage.SetTermAndVote(n.CurrTerm, n.VotedFor)
 					n.resetElectionTimer()
-					mu.Unlock()
+					Mu.Unlock()
 					return
 				}
 	
@@ -81,32 +81,32 @@ func (n *Node) startElection() {
 				}
 	
 				if grantedVotes == totalNodes / 2 + 1 {
-					n.state = Leader
-					log.Sugar().Infof("[%s] 当选 Leader!", n.selfId)
+					n.State = Leader
+					log.Sugar().Infof("[%s] 当选 Leader!", n.SelfId)
 					n.initLeaderState()
 				}
 	
-				mu.Unlock()
+				Mu.Unlock()
 			}
 		}(peerId)
 	}
 	
 	// 等待选举结果
 	time.Sleep(300 * time.Millisecond)
-	mu.Lock()
-	if n.state == Candidate {
-		log.Sugar().Infof("[%s] 选举超时，重新发起选举", n.selfId)
-		// n.state = Follower 这里不修改，如果appendentries收到term合理的心跳，再变回follower
+	Mu.Lock()
+	if n.State == Candidate {
+		log.Sugar().Infof("[%s] 选举超时，重新发起选举", n.SelfId)
+		// n.State = Follower 这里不修改，如果appendentries收到term合理的心跳，再变回follower
 		n.resetElectionTimer()
 	}
-	mu.Unlock()
+	Mu.Unlock()
 }
 
 func (node *Node) sendRequestVote(peerId string, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	log.Sugar().Infof("[%s] 请求 [%s] 投票", node.selfId, peerId)
-	client, err := node.transport.DialHTTPWithTimeout("tcp", peerId)
+	log.Sugar().Infof("[%s] 请求 [%s] 投票", node.SelfId, peerId)
+	client, err := node.Transport.DialHTTPWithTimeout("tcp", node.SelfId, peerId)
 	if err != nil {
-		log.Error(node.selfId + "dialing [" + peerId + "] fail: ", zap.Error(err))
+		log.Error("[" + node.SelfId + "]dialing [" + peerId + "] fail: ", zap.Error(err))
 		return false
 	}
 
@@ -117,50 +117,50 @@ func (node *Node) sendRequestVote(peerId string, args *RequestVoteArgs, reply *R
 		}
 	}(client)
 
-	callErr := node.transport.CallWithTimeout(client, "Node.RequestVote", args, reply) // RPC
+	callErr := node.Transport.CallWithTimeout(client, "Node.RequestVote", args, reply) // RPC
 	if callErr != nil {
-		log.Error(node.selfId + "calling [" + peerId + "] fail: ", zap.Error(callErr))
+		log.Error("[" + node.SelfId + "]calling [" + peerId + "] fail: ", zap.Error(callErr))
 	}
     return callErr == nil
 }
 
 func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
-	n.mu.Lock()
-    defer n.mu.Unlock()
+	n.Mu.Lock()
+    defer n.Mu.Unlock()
     // 如果候选人的任期小于当前任期，则拒绝投票
-    if args.Term < n.currTerm {
-        reply.Term = n.currTerm
+    if args.Term < n.CurrTerm {
+        reply.Term = n.CurrTerm
         reply.VoteGranted = false
         return nil
     }
 
     // 如果请求的 Term 更高，则更新当前 Term 并回退为 Follower
-    if args.Term > n.currTerm {
-        n.currTerm = args.Term
-        n.state = Follower
-        n.votedFor = ""
+    if args.Term > n.CurrTerm {
+        n.CurrTerm = args.Term
+        n.State = Follower
+        n.VotedFor = ""
         n.resetElectionTimer() // 重新设置选举超时
     }
 
     // 检查是否已经投过票，且是否投给了同一个候选人
-    if n.votedFor == "" || n.votedFor == args.CandidateId {
+    if n.VotedFor == "" || n.VotedFor == args.CandidateId {
         // 检查日志是否足够新
 		var lastLogIndex int
 		var lastLogTerm int
 	
-		if len(n.log) == 0 {
+		if len(n.Log) == 0 {
 			lastLogIndex = -1
 			lastLogTerm = 0
 		} else {
-			lastLogIndex = len(n.log) - 1
-			lastLogTerm = n.log[lastLogIndex].Term
+			lastLogIndex = len(n.Log) - 1
+			lastLogTerm = n.Log[lastLogIndex].Term
 		}
 
         if args.LastLogTerm > lastLogTerm || 
            (args.LastLogTerm == lastLogTerm && args.LastLogIndex >= lastLogIndex) {
             // 够新就投票给候选人
-            n.votedFor = args.CandidateId
-			log.Sugar().Infof("在term(%s), [%s]投票给[%s]", strconv.Itoa(n.currTerm), n.selfId, n.votedFor)
+            n.VotedFor = args.CandidateId
+			log.Sugar().Infof("在term(%s), [%s]投票给[%s]", strconv.Itoa(n.CurrTerm), n.SelfId, n.VotedFor)
             reply.VoteGranted = true
             n.resetElectionTimer()
         } else {
@@ -170,23 +170,23 @@ func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
         reply.VoteGranted = false
     }
 
-	n.storage.SetTermAndVote(n.currTerm, n.votedFor)
-    reply.Term = n.currTerm
+	n.Storage.SetTermAndVote(n.CurrTerm, n.VotedFor)
+    reply.Term = n.CurrTerm
 	return nil
 }
 
 // follower 500-1000ms内没收到appendentries心跳，就变成candidate发起选举
 func (node *Node) resetElectionTimer() {
-	if node.electionTimer == nil {
-		node.electionTimer = time.NewTimer(time.Duration(500+rand.Intn(500)) * time.Millisecond)
+	if node.ElectionTimer == nil {
+		node.ElectionTimer = time.NewTimer(time.Duration(500+rand.Intn(500)) * time.Millisecond)
 		go func() {
 			for {
-				<-node.electionTimer.C
+				<-node.ElectionTimer.C
 				node.startElection()
 			}
 		}()
 	} else {
-		node.electionTimer.Stop()
-		node.electionTimer.Reset(time.Duration(500+rand.Intn(500)) * time.Millisecond)
+		node.ElectionTimer.Stop()
+		node.ElectionTimer.Reset(time.Duration(500+rand.Intn(500)) * time.Millisecond)
 	}
 }

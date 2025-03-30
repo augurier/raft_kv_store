@@ -16,7 +16,7 @@ import (
 var log, _ = logprovider.CreateDefaultZapLogger(zap.InfoLevel)
 
 // 运行在进程上的初始化 + rpc注册
-func InitRPCNode(selfId string, port string, nodeAddr map[string]string, db *leveldb.DB, rstorage *RaftStorage, isRestart bool) *Node {
+func InitRPCNode(SelfId string, port string, nodeAddr map[string]string, db *leveldb.DB, rstorage *RaftStorage, isRestart bool) *Node {
 	var nodeIds []string 
 	for id := range nodeAddr {
 		nodeIds = append(nodeIds, id)
@@ -24,29 +24,29 @@ func InitRPCNode(selfId string, port string, nodeAddr map[string]string, db *lev
 
 	// 创建节点
 	node := &Node{
-		selfId:      selfId,
-		leaderId:    "",
-		nodes:       nodeIds,
-		maxLogId:    -1, // 后来发现论文中是从1开始的（初始0），但不想改了
-		currTerm:    1,
-		log:         make([]RaftLogEntry, 0),
-		commitIndex: -1,
-		lastApplied: -1,
-		nextIndex:   make(map[string]int),
-		matchIndex:  make(map[string]int),
-		db:          db,
-		storage:     rstorage,
-		transport:   &HTTPTransport{NodeMap:  nodeAddr},
+		SelfId:      SelfId,
+		LeaderId:    "",
+		Nodes:       nodeIds,
+		MaxLogId:    -1, // 后来发现论文中是从1开始的（初始0），但不想改了
+		CurrTerm:    1,
+		Log:         make([]RaftLogEntry, 0),
+		CommitIndex: -1,
+		LastApplied: -1,
+		NextIndex:   make(map[string]int),
+		MatchIndex:  make(map[string]int),
+		Db:          db,
+		Storage:     rstorage,
+		Transport:   &HTTPTransport{NodeMap:  nodeAddr},
 	}
 	node.initLeaderState()
 	if isRestart {
-		node.currTerm = rstorage.GetCurrentTerm()
-		node.votedFor = rstorage.GetVotedFor()
-		node.log = rstorage.GetLogEntries()
-		log.Sugar().Infof("[%s]从重启中恢复log数量: %d", selfId, len(node.log))
+		node.CurrTerm = rstorage.GetCurrentTerm()
+		node.VotedFor = rstorage.GetVotedFor()
+		node.Log = rstorage.GetLogEntries()
+		log.Sugar().Infof("[%s]从重启中恢复log数量: %d", SelfId, len(node.Log))
 	}
 
-	log.Sugar().Infof("[%s]开始监听" + port + "端口", selfId)
+	log.Sugar().Infof("[%s]开始监听" + port + "端口", SelfId)
 	node.ListenPort(port)
 
 	return node
@@ -73,33 +73,33 @@ func (node *Node) ListenPort(port string) {
 }
 
 // 线程模拟的初始化
-func InitThreadNode(selfId string, peerIds []string, db *leveldb.DB, rstorage *RaftStorage, isRestart bool, threadTransport *ThreadTransport) (*Node, chan struct{}) {
+func InitThreadNode(SelfId string, peerIds []string, db *leveldb.DB, rstorage *RaftStorage, isRestart bool, threadTransport *ThreadTransport) (*Node, chan struct{}) {
 	rpcChan := make(chan RPCRequest, 100) // 要监听的chan
 	// 创建节点
 	node := &Node{
-		selfId:      selfId,
-		leaderId:    "",
-		nodes:       peerIds,
-		maxLogId:    -1, // 后来发现论文中是从1开始的（初始0），但不想改了
-		currTerm:    1,
-		log:         make([]RaftLogEntry, 0),
-		commitIndex: -1,
-		lastApplied: -1,
-		nextIndex:   make(map[string]int),
-		matchIndex:  make(map[string]int),
-		db:          db,
-		storage:     rstorage,
-		transport:   threadTransport,
+		SelfId:      SelfId,
+		LeaderId:    "",
+		Nodes:       peerIds,
+		MaxLogId:    -1, // 后来发现论文中是从1开始的（初始0），但不想改了
+		CurrTerm:    1,
+		Log:         make([]RaftLogEntry, 0),
+		CommitIndex: -1,
+		LastApplied: -1,
+		NextIndex:   make(map[string]int),
+		MatchIndex:  make(map[string]int),
+		Db:          db,
+		Storage:     rstorage,
+		Transport:   threadTransport,
 	}
 	node.initLeaderState()
 	if isRestart {
-		node.currTerm = rstorage.GetCurrentTerm()
-		node.votedFor = rstorage.GetVotedFor()
-		node.log = rstorage.GetLogEntries()
-		log.Sugar().Infof("[%s]从重启中恢复log数量: %d", selfId, len(node.log))
+		node.CurrTerm = rstorage.GetCurrentTerm()
+		node.VotedFor = rstorage.GetVotedFor()
+		node.Log = rstorage.GetLogEntries()
+		log.Sugar().Infof("[%s]从重启中恢复log数量: %d", SelfId, len(node.Log))
 	}
 
-	threadTransport.RegisterNodeChan(selfId, rpcChan)
+	threadTransport.RegisterNodeChan(SelfId, rpcChan)
 	quitChan := make(chan struct{}, 1)
 	go node.listenForChan(rpcChan, quitChan)
 
@@ -107,7 +107,7 @@ func InitThreadNode(selfId string, peerIds []string, db *leveldb.DB, rstorage *R
 }
 
 func (node *Node) listenForChan(rpcChan chan RPCRequest, quitChan chan struct{}) {
-	defer node.db.Close()
+	defer node.Db.Close()
 
     for {
 		select {
@@ -162,7 +162,7 @@ func (node *Node) listenForChan(rpcChan chan RPCRequest, quitChan chan struct{})
 				req.Done <- fmt.Errorf("未知方法: %s", req.ServiceMethod)
 			}
 		case <-quitChan:
-			log.Sugar().Infof("[%s] 监听线程收到退出信号", node.selfId)
+			log.Sugar().Infof("[%s] 监听线程收到退出信号", node.SelfId)
             return
 		}
     }
@@ -170,14 +170,14 @@ func (node *Node) listenForChan(rpcChan chan RPCRequest, quitChan chan struct{})
 
 // 共同部分和启动
 func (n *Node) initLeaderState() {
-	for _, peerId := range n.nodes {
-		n.nextIndex[peerId] = len(n.log) // 发送日志的下一个索引
-		n.matchIndex[peerId] = 0         // 复制日志的最新匹配索引
+	for _, peerId := range n.Nodes {
+		n.NextIndex[peerId] = len(n.Log) // 发送日志的下一个索引
+		n.MatchIndex[peerId] = 0         // 复制日志的最新匹配索引
 	}
 }
 
 func Start(node *Node, quitChan chan struct{}) {
-	node.state = Follower     // 所有节点以 Follower 状态启动
+	node.State = Follower     // 所有节点以 Follower 状态启动
 	node.resetElectionTimer() // 启动选举超时定时器
 
 	go func() {
@@ -187,20 +187,20 @@ func Start(node *Node, quitChan chan struct{}) {
 		for {
 			select {
 			case <-quitChan:
-				fmt.Printf("[%s] Raft start 退出...\n", node.selfId)
+				fmt.Printf("[%s] Raft start 退出...\n", node.SelfId)
 				return // 退出 goroutine
 
 			case <-ticker.C:
-				switch node.state {
+				switch node.State {
 				case Follower:
 					// 监听心跳超时
-					fmt.Printf("[%s] is a follower, 监听中...\n", node.selfId)
+					// fmt.Printf("[%s] is a follower, 监听中...\n", node.SelfId)
 
 				case Leader:
 					// 发送心跳
-					fmt.Printf("[%s] is the leader, 发送心跳...\n", node.selfId)
+					// fmt.Printf("[%s] is the leader, 发送心跳...\n", node.SelfId)
 					node.resetElectionTimer() // leader 不主动触发选举
-					node.BroadCastKV(Normal)
+					node.BroadCastKV()
 				}
 			}
 		}

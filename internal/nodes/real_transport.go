@@ -13,7 +13,7 @@ type HTTPTransport struct{
 }
 
 // 封装有超时的dial
-func (t *HTTPTransport) DialHTTPWithTimeout(network string, peerId string) (ClientInterface, error) {
+func (t *HTTPTransport) DialHTTPWithTimeout(network string, myId string, peerId string) (ClientInterface, error) {
 	done := make(chan struct{})
 	var client *rpc.Client
 	var err error

@@ -35,7 +35,7 @@ func (client *Client) FindActiveNode() nodes.ClientInterface {
 	var c nodes.ClientInterface
 	for  { // 直到找到一个可连接的节点（保证至少一个节点活着）
 		peerId := getRandomAddress(client.PeerIds)
-		c, err = client.Transport.DialHTTPWithTimeout("tcp", peerId)
+		c, err = client.Transport.DialHTTPWithTimeout("tcp", "", peerId)
 		if err != nil {
 			log.Error("dialing: ", zap.Error(err))
 		} else {
@@ -72,9 +72,13 @@ func (client *Client) Write(kvCall nodes.LogEntryCall) Status {
 		if !reply.Isleader { // 对方不是leader，根据反馈找leader
 			leaderId := reply.LeaderId
 			client.CloseRpcClient(c)
-			c, err = client.Transport.DialHTTPWithTimeout("tcp", leaderId)
-			for err != nil { // 重新找下一个存活节点
+			if leaderId == "" { // 这个节点不知道leader是谁，再随机找
 				c = client.FindActiveNode()
+			} else { // dial leader
+				c, err = client.Transport.DialHTTPWithTimeout("tcp", "", leaderId)
+				for err != nil { // dial失败，重新找下一个存活节点
+					c = client.FindActiveNode()
+				}				
 			}
 		} else { // 成功
 			client.CloseRpcClient(c)
@@ -132,7 +136,7 @@ func (client *Client) FindLeader() string {
 
 		if !reply.Isleader { // 对方不是leader，根据反馈找leader
 			client.CloseRpcClient(c)
-			c, err = client.Transport.DialHTTPWithTimeout("tcp", reply.LeaderId)
+			c, err = client.Transport.DialHTTPWithTimeout("tcp", "", reply.LeaderId)
 			for err != nil { // 重新找下一个存活节点
 				c = client.FindActiveNode()
 			}

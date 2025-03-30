@@ -2,13 +2,6 @@ package nodes
 
 import "strconv"
 
-type CallMode = uint8
-const (
-	Normal CallMode = iota + 1
-	Delay
-	Fail
-)
-
 type LogEntry struct {
 	Key string
 	Value string
@@ -28,7 +21,6 @@ func (RLogE *RaftLogEntry) print() string {
 
 type LogEntryCall struct {
 	LogE LogEntry
-	CallState CallMode
 }
 
 type KVReply struct {

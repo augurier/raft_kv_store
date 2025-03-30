@@ -5,6 +5,6 @@ type ClientInterface interface{
 }
 
 type Transport interface {
-    DialHTTPWithTimeout(network string, peerId string) (ClientInterface, error)
+    DialHTTPWithTimeout(network string, myId string, peerId string) (ClientInterface, error)
     CallWithTimeout(client ClientInterface, serviceMethod string, args interface{}, reply interface{}) error
 }
