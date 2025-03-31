@@ -163,6 +163,8 @@ func (node *Node) listenForChan(rpcChan chan RPCRequest, quitChan chan struct{})
 			}
 		case <-quitChan:
 			log.Sugar().Infof("[%s] 监听线程收到退出信号", node.SelfId)
+			node.Db.Close()
+			node.Storage.Close()
             return
 		}
     }

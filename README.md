@@ -13,7 +13,7 @@
     ---nodes 分布式核心代码
         init.go 节点在main中的调用初始化，和大循环启动  
         log.go 节点存储的entry相关数据结构  
-        node_storage.go 抽象了节点数据持久化方法，存到json文件里  
+        node_storage.go 抽象了节点数据持久化方法，序列化后存到leveldb里  
         node.go 节点的相关数据结构  
         replica.go 日志复制相关逻辑  
         server_node.go 节点作为server为  client提供的功能（读写）  
@@ -32,8 +32,9 @@ lsof -i :9091查看pid
 kill -9 <pid>杀死进程  
 
 ## 关于测试
-通过新开进程的方式创建节点（参考test/common.go中executeNodeI函数  
-如果通过线程创建，会出现重复注册rpc问题
+test/ 测试真实rpc，通过新开进程（main）的方式创建节点（参考test/common.go中executeNodeI函数） 
+threadTest/ 测试线程模拟，参考threadTest/common.go中executeNodeI函数启动node
+
 
 ## 客户端工作原理
 客户端每次会随机连上集群中一个节点，此时有四种情况：  

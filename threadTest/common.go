@@ -10,18 +10,18 @@ import (
 
 func ExecuteNodeI(id string, isRestart bool, peerIds []string, threadTransport *nodes.ThreadTransport) (*nodes.Node, chan struct{}) {
 	if !isRestart {
-		os.RemoveAll("storage/node" + id + ".json")
+		os.RemoveAll("storage/node" + id)
 	}
 
 	os.RemoveAll("leveldb/simple-kv-store" + id)
 
-	db, err := leveldb.OpenFile("leveldb/simple-kv-store"+id, nil)
+	db, err := leveldb.OpenFile("leveldb/simple-kv-store" + id, nil)
 	if err != nil {
 		fmt.Println("Failed to open database: ", err)
 	}
 
 	// 打开或创建节点数据持久化文件
-	storage := nodes.NewRaftStorage("storage/node" + id + ".json")
+	storage := nodes.NewRaftStorage("storage/node" + id)
 
 	var otherIds []string
 	for _, ids := range peerIds {

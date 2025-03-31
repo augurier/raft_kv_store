@@ -51,12 +51,14 @@ func main() {
 		idCnt++
 	}
 
+	// storage/文件夹下为node重要数据持久化数据库，节点一旦创建成功就不能被删除
 	if !*isRestart {	
-		os.RemoveAll("storage/node" + *id + ".json")
+		os.RemoveAll("storage/node" + *id)
 	}
 
 	// 创建每个结点自己的数据库。这里一开始理解上有些误区，状态机的状态恢复应该靠节点的持久化log，
-	// 而用leveldb模拟状态机，造成了状态机本身的持久化，因此暂时通过删去旧db避免这一矛盾
+	// 而用leveldb模拟状态机，造成了状态机本身的持久化，因此通过删去旧db避免这一矛盾
+	// 因此leveldb/文件夹下为状态机模拟数据库，每次节点启动都需要删除该数据库
 	os.RemoveAll("leveldb/simple-kv-store" + *id)
 
 	db, err := leveldb.OpenFile("leveldb/simple-kv-store" + *id, nil)
@@ -66,7 +68,8 @@ func main() {
 	defer db.Close() // 确保数据库在使用完毕后关闭
 
 	// 打开或创建节点数据持久化文件
-	storage := nodes.NewRaftStorage("storage/node" + *id + ".json")
+	storage := nodes.NewRaftStorage("storage/node" + *id)
+	defer storage.Close()
 
 	// 初始化
 	node := nodes.InitRPCNode(*id, *port, idClusterPairs, db, storage, !*isRestart)

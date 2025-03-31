@@ -2,82 +2,41 @@ package nodes
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 
+	"github.com/syndtr/goleveldb/leveldb"
 	"go.uber.org/zap"
 )
 
 // RaftStorage 结构，持久化 currentTerm、votedFor 和 logEntries
 type RaftStorage struct {
-	mu          sync.Mutex
-	filePath    string
-	CurrentTerm int         `json:"current_term"`
-	VotedFor    string      `json:"voted_for"`
-	LogEntries  []RaftLogEntry  `json:"log_entries"`
+	mu       sync.Mutex
+	db       *leveldb.DB
+	filePath string
 }
 
 // NewRaftStorage 创建 Raft 存储
 func NewRaftStorage(filePath string) *RaftStorage {
-	storage := &RaftStorage{
+	db, err := leveldb.OpenFile(filePath, nil)
+	if err != nil {
+		log.Fatal("无法打开 LevelDB:", zap.Error(err))
+	}
+
+	return &RaftStorage{
+		db:       db,
 		filePath: filePath,
 	}
-	storage.loadData() // 载入已有数据
-	return storage
 }
 
-// loadData 读取 JSON 文件数据
-func (rs *RaftStorage) loadData() {
-	rs.mu.Lock()
-	defer rs.mu.Unlock()
-
-	file, err := os.Open(rs.filePath)
-	if err != nil {
-		log.Info("文件未创建：" + rs.filePath)
-		rs.saveData() // 文件不存在时创建默认数据
-		return
-	}
-	defer file.Close()
-
-	err = json.NewDecoder(file).Decode(rs)
-	if err != nil {
-		log.Error("读取文件失败：" + rs.filePath, zap.Error(err))
-	}
-}
-
-// 持久化数据到 JSON(必须持有锁，不能直接外部调用)
-func (rs *RaftStorage) saveData() {
-	// 获取文件所在的目录
-	dir := filepath.Dir(rs.filePath)
-
-	// 确保目录存在
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		log.Error("创建存储目录失败", zap.Error(err))
-		return
-	}
-
-	file, err := os.Create(rs.filePath)
-	if err != nil {
-		log.Error("持久化节点出错", zap.Error(err))
-		return
-	}
-	defer file.Close()
-
-	err = json.NewEncoder(file).Encode(rs)
-	if err != nil {
-		log.Error("持久化写入失败")
-	}
-}
-
-// SetCurrentTerm 设置当前 term，并清空 votedFor（符合 Raft 规范）
+// SetCurrentTerm 设置当前 term
 func (rs *RaftStorage) SetCurrentTerm(term int) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	if term > rs.CurrentTerm {
-		rs.CurrentTerm = term
-		rs.VotedFor = "" // 新任期清空投票
-		rs.saveData()
+	err := rs.db.Put([]byte("current_term"), []byte(strconv.Itoa(term)), nil)
+	if err != nil {
+		log.Error("SetCurrentTerm 持久化失败:", zap.Error(err))
 	}
 }
 
@@ -85,64 +44,131 @@ func (rs *RaftStorage) SetCurrentTerm(term int) {
 func (rs *RaftStorage) GetCurrentTerm() int {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	return rs.CurrentTerm
+	data, err := rs.db.Get([]byte("current_term"), nil)
+	if err != nil {
+		return 0 // 默认 term = 0
+	}
+	term, _ := strconv.Atoi(string(data))
+	return term
 }
 
 // SetVotedFor 记录投票给谁
 func (rs *RaftStorage) SetVotedFor(candidate string) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	rs.VotedFor = candidate
-	rs.saveData()
+	err := rs.db.Put([]byte("voted_for"), []byte(candidate), nil)
+	if err != nil {
+		log.Error("SetVotedFor 持久化失败:", zap.Error(err))
+	}
 }
 
 // GetVotedFor 获取投票对象
 func (rs *RaftStorage) GetVotedFor() string {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	return rs.VotedFor
+	data, err := rs.db.Get([]byte("voted_for"), nil)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
-// 同时设置
+// SetTermAndVote 原子更新 term 和 vote
 func (rs *RaftStorage) SetTermAndVote(term int, candidate string) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	rs.VotedFor = candidate
-	rs.CurrentTerm = term
-	rs.saveData()
+
+	batch := new(leveldb.Batch)
+	batch.Put([]byte("current_term"), []byte(strconv.Itoa(term)))
+	batch.Put([]byte("voted_for"), []byte(candidate))
+
+	err := rs.db.Write(batch, nil) // 原子提交
+	if err != nil {
+		log.Error("SetTermAndVote 持久化失败:", zap.Error(err))
+	}
 }
 
-// append日志
-func (rs *RaftStorage) AppendLog(rlogE RaftLogEntry) {
+// AppendLog 追加日志
+func (rs *RaftStorage) AppendLog(entry RaftLogEntry) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 
-	rs.LogEntries = append(rs.LogEntries, rlogE)
-	rs.saveData()
-}
+	// 序列化日志
+	batch := new(leveldb.Batch)
+	data, _ := json.Marshal(entry)
+	key := "log_" + strconv.Itoa(entry.LogId)
+	batch.Put([]byte(key), data)
 
-// 更改日志
-func (rs *RaftStorage) WriteLog(rlogEs []RaftLogEntry) {
-	rs.mu.Lock()
-	defer rs.mu.Unlock()
-
-	rs.LogEntries = rlogEs
-	rs.saveData()
-}
-
-// 获取所有日志
-func (rs *RaftStorage) GetLogEntries() []RaftLogEntry {
-	rs.mu.Lock()
-	defer rs.mu.Unlock()
-	return rs.LogEntries
+	lastIndex := strconv.Itoa(entry.LogId)
+	batch.Put([]byte("last_log_index"), []byte(lastIndex))
+	err := rs.db.Write(batch, nil)
+	if err != nil {
+		log.Error("AppendLog 持久化失败:", zap.Error(err))
+	}
 }
 
 // GetLastLogIndex 获取最新日志的 index
 func (rs *RaftStorage) GetLastLogIndex() int {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	if len(rs.LogEntries) == 0 {
-		return 0
+	data, err := rs.db.Get([]byte("last_log_index"), nil)
+	if err != nil {
+		return -1
 	}
-	return len(rs.LogEntries)-1
+	index, _ := strconv.Atoi(string(data))
+	return index
+}
+
+// WriteLog 批量写入日志（保证原子性）
+func (rs *RaftStorage) WriteLog(entries []RaftLogEntry) {
+	if len(entries) == 0 {
+		return
+	}
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	batch := new(leveldb.Batch)
+	for _, entry := range entries {
+		data, _ := json.Marshal(entry)
+		key := "log_" + strconv.Itoa(entry.LogId)
+		batch.Put([]byte(key), data)
+	}
+
+	// 更新最新日志索引
+	lastIndex := strconv.Itoa(entries[len(entries)-1].LogId)
+	batch.Put([]byte("last_log_index"), []byte(lastIndex))
+
+	err := rs.db.Write(batch, nil)
+	if err != nil {
+		log.Error("WriteLog 持久化失败:", zap.Error(err))
+	}
+}
+
+// GetLogEntries 获取所有日志
+func (rs *RaftStorage) GetLogEntries() []RaftLogEntry {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	var logs []RaftLogEntry
+	iter := rs.db.NewIterator(nil, nil) // 遍历所有键值
+	defer iter.Release()
+
+	for iter.Next() {
+		key := string(iter.Key())
+		if strings.HasPrefix(key, "log_") { // 过滤日志 key
+			var entry RaftLogEntry
+			if err := json.Unmarshal(iter.Value(), &entry); err == nil {
+				logs = append(logs, entry)
+			} else {
+				log.Error("解析日志失败:", zap.Error(err))
+			}
+		}
+	}
+
+	return logs
+}
+
+// Close 关闭数据库
+func (rs *RaftStorage) Close() {
+	rs.db.Close()
 }
