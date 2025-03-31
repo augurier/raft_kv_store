@@ -33,7 +33,7 @@ func TestBasicConnectivity(t *testing.T) {
     }
 }
 
-func TestElectionWithPartition(t *testing.T) {
+func TestSingelPartition(t *testing.T) {
 	// 登记结点信息
 	n := 3
 	var peerIds []string
@@ -58,7 +58,7 @@ func TestElectionWithPartition(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(2 * time.Second) // 等待启动完毕
+	time.Sleep(time.Second) // 等待启动完毕
 	fmt.Println("开始分区模拟1")
 	var leaderNo int
 	for i := 0; i < n; i++ {
@@ -141,6 +141,101 @@ func TestElectionWithPartition(t *testing.T) {
 	}
 
 	time.Sleep(time.Second)
+	// 日志一致性检查
+	for i := 0; i < n; i++ {
+		if len(nodeCollections[i].Log) != 5 {
+			t.Errorf("日志数量不一致:" + strconv.Itoa(len(nodeCollections[i].Log)))
+		}
+	}
+}
+
+func TestQuorumPartition(t *testing.T) {
+	// 登记结点信息
+	n := 5 // 奇数，模拟不超过半数节点分区
+	var peerIds []string
+	for i := 0; i < n; i++ {
+		peerIds = append(peerIds, strconv.Itoa(i + 1))
+	}
+
+	// 结点启动
+	var quitCollections []chan struct{}
+	var nodeCollections []*nodes.Node
+	threadTransport := nodes.NewThreadTransport()
+	for i := 0; i < n; i++ {
+		n, quitChan := ExecuteNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
+		quitCollections = append(quitCollections, quitChan)
+		nodeCollections = append(nodeCollections, n)
+	}
+
+	// 通知所有node结束
+	defer func(){
+		for _, quitChan := range quitCollections {
+			close(quitChan)
+		}
+	}()
+
+	time.Sleep(time.Second) // 等待启动完毕
+	fmt.Println("开始分区模拟1")
+	for i := 0; i < n / 2; i++ {
+		for j := n / 2; j < n; j++ {
+			threadTransport.SetConnectivity(nodeCollections[j].SelfId, nodeCollections[i].SelfId, false)
+			threadTransport.SetConnectivity(nodeCollections[i].SelfId, nodeCollections[j].SelfId, false)			
+		}
+	}
+    time.Sleep(2 * time.Second)
+
+	leaderCnt := 0
+	for i := 0; i < n / 2; i++ {
+		if nodeCollections[i].State == nodes.Leader {
+			leaderCnt++
+		}
+	}
+	if leaderCnt != 0 {
+		t.Errorf("少数分区不应该产生leader")
+	}
+
+	for i := n / 2; i < n; i++ {
+		if nodeCollections[i].State == nodes.Leader {
+			leaderCnt++
+		}
+	}
+	if leaderCnt != 1 {
+		t.Errorf("多数分区应该产生一个leader")
+	}
+
+	// client启动
+	c := clientPkg.Client{PeerIds: peerIds, Transport: threadTransport}
+	var s clientPkg.Status
+	for i := 0; i < 5; i++ {
+		key := strconv.Itoa(i)
+		newlog := nodes.LogEntry{Key: key, Value: "hello"}
+		s = c.Write(nodes.LogEntryCall{LogE: newlog})
+		if s != clientPkg.Ok {
+			t.Errorf("write test fail")
+		}		
+	}
+
+	time.Sleep(time.Second) // 等待写入完毕
+
+    // 恢复网络
+	for i := 0; i < n / 2; i++ {
+		for j := n / 2; j < n; j++ {
+			threadTransport.SetConnectivity(nodeCollections[j].SelfId, nodeCollections[i].SelfId, true)
+			threadTransport.SetConnectivity(nodeCollections[i].SelfId, nodeCollections[j].SelfId, true)			
+		}
+	}
+	time.Sleep(1 * time.Second)
+
+	leaderCnt = 0
+	for j := 0; j < n; j++ {
+		if nodeCollections[j].State == nodes.Leader {
+			leaderCnt++
+		}			
+	}
+	if leaderCnt != 1 {
+		t.Errorf("多leader产生")
+	}
+
 	// 日志一致性检查
 	for i := 0; i < n; i++ {
 		if len(nodeCollections[i].Log) != 5 {
