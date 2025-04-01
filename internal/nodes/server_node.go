@@ -14,6 +14,8 @@ type ServerReply struct{
 // RPC call
 func (node *Node) WriteKV(kvCall *LogEntryCall, reply *ServerReply) error {
 	log.Sugar().Infof("[%s]收到客户端write请求", node.SelfId)
+	node.Mu.Lock()
+	defer node.Mu.Unlock()
 
 	// 自己不是leader，转交leader地址回复	
 	if node.State != Leader {
@@ -39,6 +41,9 @@ func (node *Node) WriteKV(kvCall *LogEntryCall, reply *ServerReply) error {
 // RPC call
 func (node *Node) ReadKey(key *string, reply *ServerReply) error {
 	log.Sugar().Infof("[%s]收到客户端read请求", node.SelfId)
+	node.Mu.Lock()
+	defer node.Mu.Unlock()
+
 	// 先只读自己(无论自己是不是leader)，也方便测试
 	value, err := node.Db.Get([]byte(*key), nil)
 	if err == leveldb.ErrNotFound {
@@ -57,6 +62,9 @@ type FindLeaderReply struct{
 	LeaderId string
 }
 func (node *Node) FindLeader(_ struct{}, reply *FindLeaderReply) error {
+	node.Mu.Lock()
+	defer node.Mu.Unlock()
+	
 	// 自己不是leader，转交leader地址回复	
 	if node.State != Leader {
 		reply.Isleader = false

@@ -180,7 +180,7 @@ func (n *Node) initLeaderState() {
 
 func Start(node *Node, quitChan chan struct{}) {
 	node.State = Follower     // 所有节点以 Follower 状态启动
-	node.resetElectionTimer() // 启动选举超时定时器
+	node.ResetElectionTimer() // 启动选举超时定时器
 
 	go func() {
 		ticker := time.NewTicker(50 * time.Millisecond)
@@ -201,7 +201,7 @@ func Start(node *Node, quitChan chan struct{}) {
 				case Leader:
 					// 发送心跳
 					// fmt.Printf("[%s] is the leader, 发送心跳...\n", node.SelfId)
-					node.resetElectionTimer() // leader 不主动触发选举
+					node.ResetElectionTimer() // leader 不主动触发选举
 					node.BroadCastKV()
 				}
 			}

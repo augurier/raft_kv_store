@@ -21,7 +21,7 @@ type RequestVoteReply struct {
     VoteGranted bool // 是否同意投票
 }
 
-func (n *Node) startElection() {
+func (n *Node) StartElection() {
 	n.Mu.Lock()
     defer n.Mu.Unlock()
     // 增加当前任期，转换为 Candidate
@@ -33,7 +33,7 @@ func (n *Node) startElection() {
     log.Sugar().Infof("[%s] 开始选举，当前任期: %d", n.SelfId, n.CurrTerm)
 
     // 重新设置选举超时，防止重复选举
-    n.resetElectionTimer()
+    n.ResetElectionTimer()
 
     // 构造 RequestVote 请求
 	var lastLogIndex int
@@ -71,7 +71,7 @@ func (n *Node) startElection() {
 					n.State = Follower
 					n.VotedFor = ""
 					n.Storage.SetTermAndVote(n.CurrTerm, n.VotedFor)
-					n.resetElectionTimer()
+					n.ResetElectionTimer()
 					Mu.Unlock()
 					return
 				}
@@ -95,9 +95,9 @@ func (n *Node) startElection() {
 	time.Sleep(300 * time.Millisecond)
 	Mu.Lock()
 	if n.State == Candidate {
-		log.Sugar().Infof("[%s] 选举超时，重新发起选举", n.SelfId)
+		log.Sugar().Infof("[%s] 选举超时，等待后将重新发起选举", n.SelfId)
 		// n.State = Follower 这里不修改，如果appendentries收到term合理的心跳，再变回follower
-		n.resetElectionTimer()
+		n.ResetElectionTimer()
 	}
 	Mu.Unlock()
 }
@@ -139,7 +139,7 @@ func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
         n.CurrTerm = args.Term
         n.State = Follower
         n.VotedFor = ""
-        n.resetElectionTimer() // 重新设置选举超时
+        n.ResetElectionTimer() // 重新设置选举超时
     }
 
     // 检查是否已经投过票，且是否投给了同一个候选人
@@ -162,7 +162,7 @@ func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
             n.VotedFor = args.CandidateId
 			log.Sugar().Infof("在term(%s), [%s]投票给[%s]", strconv.Itoa(n.CurrTerm), n.SelfId, n.VotedFor)
             reply.VoteGranted = true
-            n.resetElectionTimer()
+            n.ResetElectionTimer()
         } else {
             reply.VoteGranted = false
         }
@@ -176,13 +176,13 @@ func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 }
 
 // follower 500-1000ms内没收到appendentries心跳，就变成candidate发起选举
-func (node *Node) resetElectionTimer() {
+func (node *Node) ResetElectionTimer() {
 	if node.ElectionTimer == nil {
 		node.ElectionTimer = time.NewTimer(time.Duration(500+rand.Intn(500)) * time.Millisecond)
 		go func() {
 			for {
 				<-node.ElectionTimer.C
-				node.startElection()
+				node.StartElection()
 			}
 		}()
 	} else {

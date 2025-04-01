@@ -45,7 +45,7 @@ func (node *Node) sendKV(peerId string, failCount *int, failMutex *sync.Mutex) {
 		if *failCount == len(node.Nodes) / 2 + 1 { // 无法联系超过半数：自己有问题，降级
 			node.LeaderId = ""
 			node.State = Follower
-			node.resetElectionTimer()
+			node.ResetElectionTimer()
 		}
 		failMutex.Unlock()
 		return
@@ -88,7 +88,7 @@ func (node *Node) sendKV(peerId string, failCount *int, failMutex *sync.Mutex) {
 			if *failCount == len(node.Nodes) / 2 + 1 { // 无法联系超过半数：自己有问题，降级
 				node.LeaderId = ""
 				node.State = Follower
-				node.resetElectionTimer()
+				node.ResetElectionTimer()
 			}
 			failMutex.Unlock()
 			return
@@ -101,7 +101,7 @@ func (node *Node) sendKV(peerId string, failCount *int, failMutex *sync.Mutex) {
 			node.State = Follower
 			node.VotedFor = ""
 			node.Storage.SetTermAndVote(node.CurrTerm, node.VotedFor)
-			node.resetElectionTimer()
+			node.ResetElectionTimer()
 			return
 		}
 		NextIndex-- // 失败往前传一格
@@ -221,7 +221,7 @@ func (node *Node) AppendEntries(arg *AppendEntriesArg, reply *AppendEntriesReply
     node.applyCommittedLogs()
 
 	// 在成功接受日志或心跳后，重置选举超时
-	node.resetElectionTimer()
+	node.ResetElectionTimer()
     *reply = AppendEntriesReply{node.CurrTerm, true}
     return nil
 }
