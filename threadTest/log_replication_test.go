@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestInitElection(t *testing.T) {
+func TestNormalReplication(t *testing.T) {
 	n := 5
 	var peerIds []string
 	for i := 0; i < n; i++ {
@@ -38,13 +38,23 @@ func TestInitElection(t *testing.T) {
 
 	nodeCollections[0].StartElection()
 	time.Sleep(time.Second)
-
 	CheckOneLeader(t, nodeCollections)
 	CheckIsLeader(t, nodeCollections[0])
 	CheckTerm(t, nodeCollections[0], 2)
+
+	for i := 0; i < 10; i++ {
+		key := strconv.Itoa(i)
+		newlog := nodes.LogEntry{Key: key, Value: "hello"}
+		SendKvCall(&nodes.LogEntryCall{LogE: newlog}, nodeCollections[0])	
+	}
+
+	time.Sleep(time.Second)
+	for i := 0; i < n; i++ {
+		CheckLogNum(t, nodeCollections[i], 10)
+	}
 }
 
-func TestRepeatElection(t *testing.T) {
+func TestParallelReplication(t *testing.T) {
 	n := 5
 	var peerIds []string
 	for i := 0; i < n; i++ {
@@ -73,16 +83,26 @@ func TestRepeatElection(t *testing.T) {
 		nodeCollections[i].State = nodes.Follower
 	}
 
-	go nodeCollections[0].StartElection()
-	go nodeCollections[0].StartElection()
+	nodeCollections[0].StartElection()
 	time.Sleep(time.Second)
-
 	CheckOneLeader(t, nodeCollections)
 	CheckIsLeader(t, nodeCollections[0])
-	CheckTerm(t, nodeCollections[0], 3)
+	CheckTerm(t, nodeCollections[0], 2)
+
+	for i := 0; i < 10; i++ {
+		key := strconv.Itoa(i)
+		newlog := nodes.LogEntry{Key: key, Value: "hello"}
+		go SendKvCall(&nodes.LogEntryCall{LogE: newlog}, nodeCollections[0])
+		go nodeCollections[0].BroadCastKV()
+	}
+
+	time.Sleep(time.Second)
+	for i := 0; i < n; i++ {
+		CheckLogNum(t, nodeCollections[i], 10)
+	}
 }
 
-func TestBelowHalfCandidateElection(t *testing.T) {
+func TestFollowerLagging(t *testing.T) {
 	n := 5
 	var peerIds []string
 	for i := 0; i < n; i++ {
@@ -111,52 +131,27 @@ func TestBelowHalfCandidateElection(t *testing.T) {
 		nodeCollections[i].State = nodes.Follower
 	}
 
-	go nodeCollections[0].StartElection()
-	go nodeCollections[1].StartElection()
+	nodeCollections[0].StartElection()
 	time.Sleep(time.Second)
-
 	CheckOneLeader(t, nodeCollections)
-	for i := 0; i < n; i++ {
-		CheckTerm(t, nodeCollections[i], 2)
-	}
-}
+	CheckIsLeader(t, nodeCollections[0])
+	CheckTerm(t, nodeCollections[0], 2)
+	close(quitCollections[1])
 
-func TestOverHalfCandidateElection(t *testing.T) {
-	n := 5
-	var peerIds []string
-	for i := 0; i < n; i++ {
-		peerIds = append(peerIds, strconv.Itoa(i + 1))
+	for i := 0; i < 10; i++ {
+		key := strconv.Itoa(i)
+		newlog := nodes.LogEntry{Key: key, Value: "hello"}
+		go SendKvCall(&nodes.LogEntryCall{LogE: newlog}, nodeCollections[0])
 	}
 
-	// 结点启动
-	var quitCollections []chan struct{}
-	var nodeCollections []*nodes.Node
-	threadTransport := nodes.NewThreadTransport()
-	for i := 0; i < n; i++ {
-		n, quitChan := ExecuteStaticNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
-		quitCollections = append(quitCollections, quitChan)
-		nodeCollections = append(nodeCollections, n)
-	}
-	StopElectionReset(nodeCollections, quitCollections)
+	node, q := ExecuteStaticNodeI("2", true, peerIds, threadTransport)
+	quitCollections[1] = q
+	nodeCollections[1] = node
+	nodeCollections[1].State = nodes.Follower
+	StopElectionReset(nodeCollections[1:2], quitCollections[1:2])
 
-	// 通知所有node结束
-	defer func(){
-		for _, quitChan := range quitCollections {
-			close(quitChan)
-		}
-	}()
-
-	for i := 0; i < n; i++ {
-		nodeCollections[i].State = nodes.Follower
-	}
-
-	go nodeCollections[0].StartElection()
-	go nodeCollections[1].StartElection()
-	go nodeCollections[2].StartElection()	
 	time.Sleep(time.Second)
-
-	CheckZeroOrOneLeader(t, nodeCollections)
 	for i := 0; i < n; i++ {
-		CheckTerm(t, nodeCollections[i], 2)
+		CheckLogNum(t, nodeCollections[i], 10)
 	}
 }
