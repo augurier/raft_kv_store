@@ -25,6 +25,13 @@ func (node *Node) WriteKV(kvCall *LogEntryCall, reply *ServerReply) error {
 		return nil
 	}
 
+	if node.SeenRequests[kvCall.Id] {
+        log.Sugar().Infof("Leader [%s] 已处理过client[%s]的请求 %d, 跳过", node.SelfId, kvCall.Id.ClientId, kvCall.Id.LogId)
+        reply.Isleader = true
+        return nil
+    }
+	node.SeenRequests[kvCall.Id] = true
+
 	// 自己是leader，修改自己的记录并广播
 	node.MaxLogId++
 	logId := node.MaxLogId

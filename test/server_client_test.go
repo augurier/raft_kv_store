@@ -45,14 +45,15 @@ func TestServerClient(t *testing.T) {
 
 	time.Sleep(time.Second) // 等待启动完毕
 	// client启动
-	c := clientPkg.Client{PeerIds: peerIds, Transport: &nodes.HTTPTransport{NodeMap:  addressMap}}
+	transport := &nodes.HTTPTransport{NodeMap:  addressMap}
+	c := clientPkg.NewClient("0", peerIds, transport)
 
 	// 写入
 	var s clientPkg.Status
 	for i := 0; i < 10; i++ {
 		key := strconv.Itoa(i)
 		newlog := nodes.LogEntry{Key: key, Value: "hello"}
-		s := c.Write(nodes.LogEntryCall{LogE: newlog})
+		s := c.Write(newlog)
 		if s != clientPkg.Ok {
 			t.Errorf("write test fail")
 		}		

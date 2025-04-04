@@ -120,12 +120,12 @@ func TestSingelPartition(t *testing.T) {
 	}
 
 	// client启动
-	c := clientPkg.Client{PeerIds: peerIds, Transport: threadTransport}
+	c := clientPkg.NewClient("0", peerIds, threadTransport)
 	var s clientPkg.Status
 	for i := 0; i < 5; i++ {
 		key := strconv.Itoa(i)
 		newlog := nodes.LogEntry{Key: key, Value: "hello"}
-		s = c.Write(nodes.LogEntryCall{LogE: newlog})
+		s = c.Write(newlog)
 		if s != clientPkg.Ok {
 			t.Errorf("write test fail")
 		}		
@@ -204,12 +204,12 @@ func TestQuorumPartition(t *testing.T) {
 	}
 
 	// client启动
-	c := clientPkg.Client{PeerIds: peerIds, Transport: threadTransport}
+	c := clientPkg.NewClient("0", peerIds, threadTransport)
 	var s clientPkg.Status
 	for i := 0; i < 5; i++ {
 		key := strconv.Itoa(i)
 		newlog := nodes.LogEntry{Key: key, Value: "hello"}
-		s = c.Write(nodes.LogEntryCall{LogE: newlog})
+		s = c.Write(newlog)
 		if s != clientPkg.Ok {
 			t.Errorf("write test fail")
 		}		

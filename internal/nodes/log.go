@@ -20,7 +20,13 @@ func (RLogE *RaftLogEntry) print() string {
 }
 
 type LogEntryCall struct {
+	Id LogEntryCallId
 	LogE LogEntry
+}
+
+type LogEntryCallId struct {
+	ClientId string
+	LogId int
 }
 
 type KVReply struct {

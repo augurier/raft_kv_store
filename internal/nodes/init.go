@@ -37,6 +37,7 @@ func InitRPCNode(SelfId string, port string, nodeAddr map[string]string, db *lev
 		Db:          db,
 		Storage:     rstorage,
 		Transport:   &HTTPTransport{NodeMap:  nodeAddr},
+		SeenRequests: make(map[LogEntryCallId]bool),
 	}
 	node.initLeaderState()
 	if isRestart {
@@ -90,6 +91,7 @@ func InitThreadNode(SelfId string, peerIds []string, db *leveldb.DB, rstorage *R
 		Db:          db,
 		Storage:     rstorage,
 		Transport:   threadTransport,
+		SeenRequests: make(map[LogEntryCallId]bool),
 	}
 	node.initLeaderState()
 	if isRestart {

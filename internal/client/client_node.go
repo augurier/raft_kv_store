@@ -11,6 +11,8 @@ import (
 var log, _ = logprovider.CreateDefaultZapLogger(zap.InfoLevel)
 
 type Client struct {
+	ClientId string // 每个client唯一标识
+	NextLogId int
 	// 连接的server端节点群
 	PeerIds []string
 	Transport nodes.Transport
@@ -23,6 +25,10 @@ const (
 	NotFound
 	Fail
 )
+
+func NewClient(clientId string, peerIds []string, transport nodes.Transport) *Client {
+	return &Client{ClientId: clientId, NextLogId: 0, PeerIds: peerIds, Transport: transport}
+}
 
 func getRandomAddress(peerIds []string) string {
 	// 随机选一个 id
@@ -52,8 +58,11 @@ func (client *Client) CloseRpcClient(c nodes.ClientInterface) {
 	}
 }
 
-func (client *Client) Write(kvCall nodes.LogEntryCall) Status {
-	log.Info("client write request key :" + kvCall.LogE.Key)
+func (client *Client) Write(kv nodes.LogEntry) Status {
+	log.Info("client write request key :" + kv.Key)
+	kvCall := nodes.LogEntryCall{LogE: kv, 
+		Id: nodes.LogEntryCallId{ClientId: client.ClientId, LogId: client.NextLogId}}
+	client.NextLogId++
 
 	var reply nodes.ServerReply
 	reply.Isleader = false

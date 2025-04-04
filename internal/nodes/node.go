@@ -59,5 +59,8 @@ type Node struct {
 
 	// 通信方式
 	Transport Transport
+
+	// 已经处理过的客户端请求
+	SeenRequests map[LogEntryCallId]bool
 }
 

@@ -33,13 +33,13 @@ func TestNodeRestart(t *testing.T) {
 
 	time.Sleep(time.Second) // 等待启动完毕
 	// client启动, 连接任意节点
-	cWrite := clientPkg.Client{PeerIds: peerIds, Transport: threadTransport}
+	cWrite := clientPkg.NewClient("0", peerIds, threadTransport)
 	// 写入
 	var s clientPkg.Status
 	for i := 0; i < 5; i++ {
 		key := strconv.Itoa(i)
 		newlog := nodes.LogEntry{Key: key, Value: "hello"}
-		s = cWrite.Write(nodes.LogEntryCall{LogE: newlog})
+		s = cWrite.Write(newlog)
 		if s != clientPkg.Ok {
 			t.Errorf("write test fail")
 		}		
@@ -58,7 +58,7 @@ func TestNodeRestart(t *testing.T) {
 
 
 	// client启动
-	cRead := clientPkg.Client{PeerIds: peerIds, Transport: threadTransport}
+	cRead := clientPkg.NewClient("0", peerIds, threadTransport)
 	// 读写入数据
 	for i := 0; i < 5; i++ {
 		key := strconv.Itoa(i)
