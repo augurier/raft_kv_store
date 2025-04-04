@@ -17,7 +17,7 @@ func TestInitElection(t *testing.T) {
 	// 结点启动
 	var quitCollections []chan struct{}
 	var nodeCollections []*nodes.Node
-	threadTransport := nodes.NewThreadTransport()
+	threadTransport := nodes.NewThreadTransport(nodes.NewCtx())
 	for i := 0; i < n; i++ {
 		n, quitChan := ExecuteStaticNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
 		quitCollections = append(quitCollections, quitChan)
@@ -54,7 +54,7 @@ func TestRepeatElection(t *testing.T) {
 	// 结点启动
 	var quitCollections []chan struct{}
 	var nodeCollections []*nodes.Node
-	threadTransport := nodes.NewThreadTransport()
+	threadTransport := nodes.NewThreadTransport(nodes.NewCtx())
 	for i := 0; i < n; i++ {
 		n, quitChan := ExecuteStaticNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
 		quitCollections = append(quitCollections, quitChan)
@@ -92,7 +92,7 @@ func TestBelowHalfCandidateElection(t *testing.T) {
 	// 结点启动
 	var quitCollections []chan struct{}
 	var nodeCollections []*nodes.Node
-	threadTransport := nodes.NewThreadTransport()
+	threadTransport := nodes.NewThreadTransport(nodes.NewCtx())
 	for i := 0; i < n; i++ {
 		n, quitChan := ExecuteStaticNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
 		quitCollections = append(quitCollections, quitChan)
@@ -131,7 +131,7 @@ func TestOverHalfCandidateElection(t *testing.T) {
 	// 结点启动
 	var quitCollections []chan struct{}
 	var nodeCollections []*nodes.Node
-	threadTransport := nodes.NewThreadTransport()
+	threadTransport := nodes.NewThreadTransport(nodes.NewCtx())
 	for i := 0; i < n; i++ {
 		n, quitChan := ExecuteStaticNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
 		quitCollections = append(quitCollections, quitChan)
@@ -159,4 +159,82 @@ func TestOverHalfCandidateElection(t *testing.T) {
 	for i := 0; i < n; i++ {
 		CheckTerm(t, nodeCollections[i], 2)
 	}
+}
+
+func TestRepeatVoteRpc(t *testing.T) {
+	n := 5
+	var peerIds []string
+	for i := 0; i < n; i++ {
+		peerIds = append(peerIds, strconv.Itoa(i + 1))
+	}
+
+	// 结点启动
+	var quitCollections []chan struct{}
+	var nodeCollections []*nodes.Node
+	ctx := nodes.NewCtx()
+	threadTransport := nodes.NewThreadTransport(ctx)
+	for i := 0; i < n; i++ {
+		n, quitChan := ExecuteStaticNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
+		quitCollections = append(quitCollections, quitChan)
+		nodeCollections = append(nodeCollections, n)
+	}
+	StopElectionReset(nodeCollections, quitCollections)
+
+	// 通知所有node结束
+	defer func(){
+		for _, quitChan := range quitCollections {
+			close(quitChan)
+		}
+	}()
+
+	for i := 0; i < n; i++ {
+		nodeCollections[i].State = nodes.Follower
+	}
+
+	ctx.SetBehavior("1", "2", nodes.RetryRpc, 0, 2)
+	nodeCollections[0].StartElection()
+	time.Sleep(time.Second)
+
+	CheckOneLeader(t, nodeCollections)
+	CheckIsLeader(t, nodeCollections[0])
+	CheckTerm(t, nodeCollections[0], 2)
+}
+
+func TestFailVoteRpc(t *testing.T) {
+	n := 5
+	var peerIds []string
+	for i := 0; i < n; i++ {
+		peerIds = append(peerIds, strconv.Itoa(i + 1))
+	}
+
+	// 结点启动
+	var quitCollections []chan struct{}
+	var nodeCollections []*nodes.Node
+	ctx := nodes.NewCtx()
+	threadTransport := nodes.NewThreadTransport(ctx)
+	for i := 0; i < n; i++ {
+		n, quitChan := ExecuteStaticNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
+		quitCollections = append(quitCollections, quitChan)
+		nodeCollections = append(nodeCollections, n)
+	}
+	StopElectionReset(nodeCollections, quitCollections)
+
+	// 通知所有node结束
+	defer func(){
+		for _, quitChan := range quitCollections {
+			close(quitChan)
+		}
+	}()
+
+	for i := 0; i < n; i++ {
+		nodeCollections[i].State = nodes.Follower
+	}
+
+	ctx.SetBehavior("1", "2", nodes.FailRpc, 0, 0)
+	nodeCollections[0].StartElection()
+	time.Sleep(time.Second)
+
+	CheckOneLeader(t, nodeCollections)
+	CheckIsLeader(t, nodeCollections[0])
+	CheckTerm(t, nodeCollections[0], 2)
 }

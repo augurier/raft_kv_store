@@ -112,6 +112,22 @@ func (node *Node) listenForChan(rpcChan chan RPCRequest, quitChan chan struct{})
     for {
 		select {
         case req := <-rpcChan:
+			switch req.Behavior {
+			case DelayRpc:
+				threadTran, ok := node.Transport.(*ThreadTransport)
+				if !ok {
+					log.Fatal("无效的delayRpc模式")
+				}
+				duration, ok2 := threadTran.Ctx.GetDelay(req.SourceId, node.SelfId)
+				if !ok2 {
+					log.Fatal("没有设置对应的delay时间")
+				}
+				time.Sleep(duration)
+
+			case FailRpc:
+				continue
+			}
+
 			switch req.ServiceMethod {
 			case "Node.AppendEntries":
 				arg, ok := req.Args.(*AppendEntriesArg)

@@ -18,7 +18,7 @@ func TestNodeRestart(t *testing.T) {
 
 	// 结点启动
 	var quitCollections []chan struct{}
-	threadTransport := nodes.NewThreadTransport()
+	threadTransport := nodes.NewThreadTransport(nodes.NewCtx())
 	for i := 0; i < n; i++ {
 		_, quitChan := ExecuteNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
 		quitCollections = append(quitCollections, quitChan)

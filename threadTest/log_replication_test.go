@@ -17,7 +17,7 @@ func TestNormalReplication(t *testing.T) {
 	// 结点启动
 	var quitCollections []chan struct{}
 	var nodeCollections []*nodes.Node
-	threadTransport := nodes.NewThreadTransport()
+	threadTransport := nodes.NewThreadTransport(nodes.NewCtx())
 	for i := 0; i < n; i++ {
 		n, quitChan := ExecuteStaticNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
 		quitCollections = append(quitCollections, quitChan)
@@ -64,7 +64,7 @@ func TestParallelReplication(t *testing.T) {
 	// 结点启动
 	var quitCollections []chan struct{}
 	var nodeCollections []*nodes.Node
-	threadTransport := nodes.NewThreadTransport()
+	threadTransport := nodes.NewThreadTransport(nodes.NewCtx())
 	for i := 0; i < n; i++ {
 		n, quitChan := ExecuteStaticNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
 		quitCollections = append(quitCollections, quitChan)
@@ -112,7 +112,7 @@ func TestFollowerLagging(t *testing.T) {
 	// 结点启动
 	var quitCollections []chan struct{}
 	var nodeCollections []*nodes.Node
-	threadTransport := nodes.NewThreadTransport()
+	threadTransport := nodes.NewThreadTransport(nodes.NewCtx())
 	for i := 0; i < n; i++ {
 		n, quitChan := ExecuteStaticNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
 		quitCollections = append(quitCollections, quitChan)

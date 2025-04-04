@@ -11,7 +11,7 @@ import (
 )
 
 func TestBasicConnectivity(t *testing.T) {
-    transport := nodes.NewThreadTransport()
+    transport := nodes.NewThreadTransport(nodes.NewCtx())
 
     transport.RegisterNodeChan("1", make(chan nodes.RPCRequest, 10))
     transport.RegisterNodeChan("2", make(chan nodes.RPCRequest, 10))
@@ -44,7 +44,7 @@ func TestSingelPartition(t *testing.T) {
 	// 结点启动
 	var quitCollections []chan struct{}
 	var nodeCollections []*nodes.Node
-	threadTransport := nodes.NewThreadTransport()
+	threadTransport := nodes.NewThreadTransport(nodes.NewCtx())
 	for i := 0; i < n; i++ {
 		n, quitChan := ExecuteNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
 		quitCollections = append(quitCollections, quitChan)
@@ -160,7 +160,7 @@ func TestQuorumPartition(t *testing.T) {
 	// 结点启动
 	var quitCollections []chan struct{}
 	var nodeCollections []*nodes.Node
-	threadTransport := nodes.NewThreadTransport()
+	threadTransport := nodes.NewThreadTransport(nodes.NewCtx())
 	for i := 0; i < n; i++ {
 		n, quitChan := ExecuteNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
 		quitCollections = append(quitCollections, quitChan)

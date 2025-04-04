@@ -6,12 +6,26 @@ import (
 	"time"
 )
 
+type CallBehavior = uint8
+
+const (
+	NormalRpc CallBehavior = iota + 1
+	DelayRpc
+	RetryRpc
+	FailRpc
+)
+
 // RPC 请求结构
 type RPCRequest struct {
 	ServiceMethod string
 	Args          interface{}
 	Reply 		  interface{}
+
 	Done  chan error // 用于返回响应
+
+	SourceId string
+	// 模拟rpc请求状态
+	Behavior CallBehavior
 }
 
 // 线程版 Transport
@@ -19,6 +33,7 @@ type ThreadTransport struct {
 	mu       sync.Mutex
 	nodeChans map[string]chan RPCRequest // 每个节点的消息通道
 	connectivityMap map[string]map[string]bool // 模拟网络分区
+	Ctx *Ctx
 }
 
 // 线程版 dial的返回clientinterface
@@ -32,10 +47,11 @@ func (c *ThreadClient) Close() error {
 }
 
 // 初始化线程通信系统
-func NewThreadTransport() *ThreadTransport {
+func NewThreadTransport(ctx *Ctx) *ThreadTransport {
 	return &ThreadTransport{
 		nodeChans: make(map[string]chan RPCRequest),
 		connectivityMap: make(map[string]map[string]bool),
+		Ctx: ctx,
 	}
 }
 
@@ -101,7 +117,7 @@ func (t *ThreadTransport) CallWithTimeout(client ClientInterface, serviceMethod 
 
 
     if !isConnected {
-        return fmt.Errorf("network partition: %s cannot reach %s", threadClient.SourceId, threadClient.TargetId)
+        return fmt.Errorf("网络分区: %s cannot reach %s", threadClient.SourceId, threadClient.TargetId)
     }
 
 	// 获取目标节点的 channel
@@ -113,35 +129,62 @@ func (t *ThreadTransport) CallWithTimeout(client ClientInterface, serviceMethod 
 	// 创建响应通道（用于返回 RPC 结果）
 	done := make(chan error, 1)
 
+	behavior := t.Ctx.GetBehavior(threadClient.SourceId, threadClient.TargetId)
 	// 发送请求
 	request := RPCRequest{
 		ServiceMethod: serviceMethod,
 		Args:          args,
 		Reply:         reply,
 		Done:  done,
+		SourceId: threadClient.SourceId,
+		Behavior: behavior,
 	}
 
-	select {
-	case targetChan <- request:
-		// 等待响应或超时
+	sendRequest := func(req RPCRequest, targetChan chan RPCRequest) bool {
 		select {
-		case err := <-done:
-			if threadClient.SourceId == "" { // 来自客户端的连接
-				isConnected = true
-			} else {
-				t.mu.Lock()
-				isConnected = t.connectivityMap[threadClient.TargetId][threadClient.SourceId] // 检查连通性
-				t.mu.Unlock()		
-			}
-
-			if !isConnected {
-				return fmt.Errorf("network partition: %s cannot reach %s", threadClient.TargetId, threadClient.SourceId)
-			}
-			return err
-		case <-time.After(100 * time.Millisecond):
-			return fmt.Errorf("RPC 调用超时: %s", serviceMethod)
+		case targetChan <- req:
+			return true
+		default:
+			return false
 		}
+	}
+
+	switch behavior {
+	case RetryRpc:
+		retryTimes, ok := t.Ctx.GetRetries(threadClient.SourceId, threadClient.TargetId)
+		if !ok {
+			log.Fatal("没有设置对应的retry次数")
+		}
+		request.Behavior = NormalRpc
+		// 尝试发送多次, 期待同一个done
+		for i := 0; i < retryTimes; i++ {
+			if !sendRequest(request, targetChan) {
+				return fmt.Errorf("目标节点 [%s] 无法接收请求", threadClient.TargetId)
+			}
+		}
+
 	default:
-		return fmt.Errorf("目标节点 [%s] 无法接收请求", threadClient.TargetId)
+		if !sendRequest(request, targetChan) {
+			return fmt.Errorf("目标节点 [%s] 无法接收请求", threadClient.TargetId)
+		}
+	}
+	
+	// 等待响应或超时
+	select {
+	case err := <-done:
+		if threadClient.SourceId == "" { // 来自客户端的连接
+			isConnected = true
+		} else {
+			t.mu.Lock()
+			isConnected = t.connectivityMap[threadClient.TargetId][threadClient.SourceId] // 检查连通性
+			t.mu.Unlock()
+		}
+	
+		if !isConnected {
+			return fmt.Errorf("network partition: %s cannot reach %s", threadClient.TargetId, threadClient.SourceId)
+		}
+		return err
+	case <-time.After(100 * time.Millisecond):
+		return fmt.Errorf("RPC 调用超时: %s", serviceMethod)
 	}
 }
