@@ -137,3 +137,56 @@ func TestRepeatClientReq(t *testing.T) {
 		CheckLogNum(t, nodeCollections[i], 10)
 	}
 }
+
+func TestParallelClientReq(t *testing.T) {
+	// 登记结点信息
+	n := 5
+	var peerIds []string
+	for i := 0; i < n; i++ {
+		peerIds = append(peerIds, strconv.Itoa(i + 1))
+	}
+
+	// 结点启动
+	var quitCollections []chan struct{}
+	var nodeCollections []*nodes.Node
+	ctx := nodes.NewCtx()
+	threadTransport := nodes.NewThreadTransport(ctx)
+	for i := 0; i < n; i++ {
+		n, quitChan := ExecuteNodeI(strconv.Itoa(i + 1), false, peerIds, threadTransport)
+		quitCollections = append(quitCollections, quitChan)
+		nodeCollections = append(nodeCollections, n)
+	}
+
+	// 通知所有node结束
+	defer func(){
+		for _, quitChan := range quitCollections {
+			close(quitChan)
+		}
+	}()
+
+	time.Sleep(time.Second) // 等待启动完毕
+	// client启动
+	c1 := clientPkg.NewClient("0", peerIds, threadTransport)
+	c2 := clientPkg.NewClient("1", peerIds, threadTransport)
+
+
+
+	// 写入
+	go ClientWriteLog(t, 0, 10, c1)
+	go ClientWriteLog(t, 0, 10, c2)
+
+	time.Sleep(time.Second) // 等待写入完毕
+	// 读写入数据
+	for i := 0; i < 10; i++ {
+		key := strconv.Itoa(i)
+		var value string
+		s := c1.Read(key, &value)
+		if s != clientPkg.Ok || value != "hello" {
+			t.Errorf("Read test1 fail")
+		}
+	}
+
+	for i := 0; i < n; i++ {
+		CheckLogNum(t, nodeCollections[i], 20)
+	}
+}

@@ -175,10 +175,10 @@ func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 	return nil
 }
 
-// follower 500-1000ms内没收到appendentries心跳，就变成candidate发起选举
+// follower 150-300ms内没收到appendentries心跳，就变成candidate发起选举
 func (node *Node) ResetElectionTimer() {
 	if node.ElectionTimer == nil {
-		node.ElectionTimer = time.NewTimer(time.Duration(500+rand.Intn(500)) * time.Millisecond)
+		node.ElectionTimer = time.NewTimer(node.RTTable.GetElectionTimeout())
 		go func() {
 			for {
 				<-node.ElectionTimer.C

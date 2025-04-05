@@ -60,6 +60,9 @@ type Node struct {
 	// 通信方式
 	Transport Transport
 
+	// 系统的随机时间
+	RTTable *RandomTimeTable
+
 	// 已经处理过的客户端请求
 	SeenRequests map[LogEntryCallId]bool
 }

@@ -3,7 +3,9 @@ package threadTest
 import (
 	"fmt"
 	"os"
+	"simple-kv-store/internal/client"
 	"simple-kv-store/internal/nodes"
+	"strconv"
 	"testing"
 	"time"
 
@@ -102,6 +104,28 @@ func SendKvCall(kvCall *nodes.LogEntryCall, node *nodes.Node) {
 	node.BroadCastKV()
 }
 
+func ClientWriteLog(t *testing.T, startLogid int, endLogid int, cWrite *clientPkg.Client) {
+	var s clientPkg.Status
+	for i := startLogid; i < endLogid; i++ {
+		key := strconv.Itoa(i)
+		newlog := nodes.LogEntry{Key: key, Value: "hello"}
+		s = cWrite.Write(newlog)
+		if s != clientPkg.Ok {
+			t.Errorf("write test fail")
+		}		
+	}
+}
+
+func FindLeader(t *testing.T, nodeCollections []* nodes.Node) (i int) {
+	for i, node := range nodeCollections {
+		if node.State == nodes.Leader {
+			return i
+		}
+	}
+	t.Errorf("系统目前没有leader")
+	return 0
+}
+
 func CheckOneLeader(t *testing.T, nodeCollections []* nodes.Node) {
 	cnt := 0
 	for _, node := range nodeCollections {
@@ -111,6 +135,18 @@ func CheckOneLeader(t *testing.T, nodeCollections []* nodes.Node) {
 	}
 	if cnt != 1 {
 		t.Errorf("实际有%d个leader(!=1)", cnt)
+	}
+}
+
+func CheckNoLeader(t *testing.T, nodeCollections []* nodes.Node) {
+	cnt := 0
+	for _, node := range nodeCollections {
+		if node.State == nodes.Leader {
+			cnt++
+		}
+	}
+	if cnt != 0 {
+		t.Errorf("实际有%d个leader(!=0)", cnt)
 	}
 }
 
