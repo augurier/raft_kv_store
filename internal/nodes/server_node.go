@@ -1,6 +1,8 @@
 package nodes
 
 import (
+	"simple-kv-store/internal/logprovider"
+
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
@@ -13,10 +15,11 @@ type ServerReply struct{
 }
 // RPC call
 func (node *Node) WriteKV(kvCall *LogEntryCall, reply *ServerReply) error {
-	log.Sugar().Infof("[%s]收到客户端write请求", node.SelfId)
+	defer logprovider.DebugTraceback("write")
 	node.Mu.Lock()
 	defer node.Mu.Unlock()
 
+	log.Sugar().Infof("[%s]收到客户端write请求", node.SelfId)	
 	// 自己不是leader，转交leader地址回复	
 	if node.State != Leader {
 		reply.Isleader = false
@@ -47,9 +50,10 @@ func (node *Node) WriteKV(kvCall *LogEntryCall, reply *ServerReply) error {
 
 // RPC call
 func (node *Node) ReadKey(key *string, reply *ServerReply) error {
-	log.Sugar().Infof("[%s]收到客户端read请求", node.SelfId)
+	defer logprovider.DebugTraceback("read")
 	node.Mu.Lock()
 	defer node.Mu.Unlock()
+	log.Sugar().Infof("[%s]收到客户端read请求", node.SelfId)
 
 	// 先只读自己(无论自己是不是leader)，也方便测试
 	value, err := node.Db.Get([]byte(*key), nil)
@@ -69,6 +73,7 @@ type FindLeaderReply struct{
 	LeaderId string
 }
 func (node *Node) FindLeader(_ struct{}, reply *FindLeaderReply) error {
+	defer logprovider.DebugTraceback("find")
 	node.Mu.Lock()
 	defer node.Mu.Unlock()
 	

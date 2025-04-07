@@ -17,6 +17,7 @@ const (
 
 type Node struct {
 	Mu    sync.Mutex
+	MuElection sync.Mutex
 	// 当前节点id
 	SelfId string
 	// 记录的leader(不能用votedfor：投票的leader可能没有收到多数票)
@@ -65,5 +66,7 @@ type Node struct {
 
 	// 已经处理过的客户端请求
 	SeenRequests map[LogEntryCallId]bool
+
+	IsFinish bool
 }
 

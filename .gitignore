@@ -28,3 +28,4 @@ main
 leveldb
 storage
 *.log
+testdata

@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"simple-kv-store/internal/logprovider"
 	"simple-kv-store/internal/nodes"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -64,12 +65,21 @@ func (client *Client) Write(kv nodes.LogEntry) Status {
 		Id: nodes.LogEntryCallId{ClientId: client.ClientId, LogId: client.NextLogId}}
 	client.NextLogId++
 
-	var reply nodes.ServerReply
-	reply.Isleader = false
 	c := client.FindActiveNode()
 	var err error
 
-	for !reply.Isleader { // 根据存活节点的反馈，直到找到leader
+	timeout := 5 * time.Second
+	deadline := time.Now().Add(timeout)
+
+	for { // 根据存活节点的反馈，直到找到leader
+		if time.Now().After(deadline) {
+			log.Error("系统繁忙，疑似出错")
+			return Fail
+		}
+
+		var reply nodes.ServerReply
+		reply.Isleader = false
+		
 		callErr := client.Transport.CallWithTimeout(c, "Node.WriteKV", &kvCall, &reply) // RPC
 		if callErr != nil { // dial和call之间可能崩溃，重新找存活节点
 			log.Error("dialing: ", zap.Error(callErr))
@@ -85,7 +95,7 @@ func (client *Client) Write(kv nodes.LogEntry) Status {
 				c = client.FindActiveNode()
 			} else { // dial leader
 				c, err = client.Transport.DialHTTPWithTimeout("tcp", "", leaderId)
-				for err != nil { // dial失败，重新找下一个存活节点
+				if err != nil { // dial失败，重新找下一个存活节点
 					c = client.FindActiveNode()
 				}				
 			}
@@ -94,8 +104,6 @@ func (client *Client) Write(kv nodes.LogEntry) Status {
 			return Ok
 		}		
 	}
-	log.Fatal("客户端会一直找存活节点，不会运行到这里")
-	return Fail
 }
 
 func (client *Client) Read(key string, value *string) Status { // 查不到value为空

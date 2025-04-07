@@ -39,6 +39,7 @@ func InitRPCNode(SelfId string, port string, nodeAddr map[string]string, db *lev
 		Transport:   &HTTPTransport{NodeMap:  nodeAddr},
 		RTTable: NewRTTable(),
 		SeenRequests: make(map[LogEntryCallId]bool),
+		IsFinish: false,
 	}
 	node.initLeaderState()
 	if isRestart {
@@ -94,6 +95,7 @@ func InitThreadNode(SelfId string, peerIds []string, db *leveldb.DB, rstorage *R
 		Transport:   threadTransport,
 		RTTable: NewRTTable(),
 		SeenRequests: make(map[LogEntryCallId]bool),
+		IsFinish: false,
 	}
 	node.initLeaderState()
 	if isRestart {
@@ -111,7 +113,7 @@ func InitThreadNode(SelfId string, peerIds []string, db *leveldb.DB, rstorage *R
 }
 
 func (node *Node) listenForChan(rpcChan chan RPCRequest, quitChan chan struct{}) {
-	defer node.Db.Close()
+	defer logprovider.DebugTraceback("listen")
 
     for {
 		select {
@@ -126,68 +128,79 @@ func (node *Node) listenForChan(rpcChan chan RPCRequest, quitChan chan struct{})
 				if !ok2 {
 					log.Fatal("没有设置对应的delay时间")
 				}
-				time.Sleep(duration)
+				go node.switchReq(req, duration)
 
 			case FailRpc:
 				continue
 			}
 
-			switch req.ServiceMethod {
-			case "Node.AppendEntries":
-				arg, ok := req.Args.(*AppendEntriesArg)
-				resp, ok2 := req.Reply.(*AppendEntriesReply)
-				if !ok || !ok2 {
-					req.Done <- errors.New("type assertion failed for AppendEntries")
-				} else {
-					req.Done <- node.AppendEntries(arg, resp)
-				}
-
-			case "Node.RequestVote":
-				arg, ok := req.Args.(*RequestVoteArgs)
-				resp, ok2 := req.Reply.(*RequestVoteReply)
-				if !ok || !ok2 {
-					req.Done <- errors.New("type assertion failed for RequestVote")
-				} else {
-					req.Done <- node.RequestVote(arg, resp)
-				}
-
-			case "Node.WriteKV":
-				arg, ok := req.Args.(*LogEntryCall)
-				resp, ok2 := req.Reply.(*ServerReply)
-				if !ok || !ok2 {
-					req.Done <- errors.New("type assertion failed for WriteKV")
-				} else {
-					req.Done <- node.WriteKV(arg, resp)
-				}
-
-			case "Node.ReadKey":
-				arg, ok := req.Args.(*string)
-				resp, ok2 := req.Reply.(*ServerReply)
-				if !ok || !ok2 {
-					req.Done <- errors.New("type assertion failed for ReadKey")
-				} else {
-					req.Done <- node.ReadKey(arg, resp)
-				}
-
-			case "Node.FindLeader":
-				arg, ok := req.Args.(struct{})
-				resp, ok2 := req.Reply.(*FindLeaderReply)
-				if !ok || !ok2 {
-					req.Done <- errors.New("type assertion failed for FindLeader")
-				} else {
-					req.Done <- node.FindLeader(arg, resp)
-				}
-
-			default:
-				req.Done <- fmt.Errorf("未知方法: %s", req.ServiceMethod)
-			}
+			go node.switchReq(req, 0)
+			
 		case <-quitChan:
-			log.Sugar().Infof("[%s] 监听线程收到退出信号", node.SelfId)
+			node.Mu.Lock()
+			defer node.Mu.Unlock()
+			log.Sugar().Infof("[%s] 监听线程收到退出信号", node.SelfId)			
+			node.IsFinish = true
 			node.Db.Close()
 			node.Storage.Close()
             return
 		}
     }
+}
+
+func (node *Node) switchReq(req RPCRequest, delayTime time.Duration) {
+	defer logprovider.DebugTraceback("switch")
+	time.Sleep(delayTime)
+
+	switch req.ServiceMethod {
+	case "Node.AppendEntries":
+		arg, ok := req.Args.(*AppendEntriesArg)
+		resp, ok2 := req.Reply.(*AppendEntriesReply)
+		if !ok || !ok2 {
+			req.Done <- errors.New("type assertion failed for AppendEntries")
+		} else {
+			req.Done <- node.AppendEntries(arg, resp)
+		}
+
+	case "Node.RequestVote":
+		arg, ok := req.Args.(*RequestVoteArgs)
+		resp, ok2 := req.Reply.(*RequestVoteReply)
+		if !ok || !ok2 {
+			req.Done <- errors.New("type assertion failed for RequestVote")
+		} else {
+			req.Done <- node.RequestVote(arg, resp)
+		}
+
+	case "Node.WriteKV":
+		arg, ok := req.Args.(*LogEntryCall)
+		resp, ok2 := req.Reply.(*ServerReply)
+		if !ok || !ok2 {
+			req.Done <- errors.New("type assertion failed for WriteKV")
+		} else {
+			req.Done <- node.WriteKV(arg, resp)
+		}
+
+	case "Node.ReadKey":
+		arg, ok := req.Args.(*string)
+		resp, ok2 := req.Reply.(*ServerReply)
+		if !ok || !ok2 {
+			req.Done <- errors.New("type assertion failed for ReadKey")
+		} else {
+			req.Done <- node.ReadKey(arg, resp)
+		}
+
+	case "Node.FindLeader":
+		arg, ok := req.Args.(struct{})
+		resp, ok2 := req.Reply.(*FindLeaderReply)
+		if !ok || !ok2 {
+			req.Done <- errors.New("type assertion failed for FindLeader")
+		} else {
+			req.Done <- node.FindLeader(arg, resp)
+		}
+
+	default:
+		req.Done <- fmt.Errorf("未知方法: %s", req.ServiceMethod)
+	}
 }
 
 // 共同部分和启动
@@ -199,10 +212,13 @@ func (n *Node) initLeaderState() {
 }
 
 func Start(node *Node, quitChan chan struct{}) {
+	node.Mu.Lock()
 	node.State = Follower     // 所有节点以 Follower 状态启动
+	node.Mu.Unlock()
 	node.ResetElectionTimer() // 启动选举超时定时器
 
 	go func() {
+		defer logprovider.DebugTraceback("start")
 		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -213,14 +229,16 @@ func Start(node *Node, quitChan chan struct{}) {
 				return // 退出 goroutine
 
 			case <-ticker.C:
-				switch node.State {
+				node.Mu.Lock()
+				state := node.State
+				node.Mu.Unlock()
+	
+				switch state {
 				case Follower:
 					// 监听心跳超时
-					// fmt.Printf("[%s] is a follower, 监听中...\n", node.SelfId)
-
+	
 				case Leader:
 					// 发送心跳
-					// fmt.Printf("[%s] is the leader, 发送心跳...\n", node.SelfId)
 					node.ResetElectionTimer() // leader 不主动触发选举
 					node.BroadCastKV()
 				}

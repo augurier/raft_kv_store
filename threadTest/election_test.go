@@ -23,7 +23,7 @@ func TestInitElection(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -60,7 +60,7 @@ func TestRepeatElection(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -98,7 +98,7 @@ func TestBelowHalfCandidateElection(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -137,7 +137,7 @@ func TestOverHalfCandidateElection(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -178,7 +178,7 @@ func TestRepeatVoteRpc(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -229,7 +229,7 @@ func TestFailVoteRpc(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -276,7 +276,7 @@ func TestDelayVoteRpc(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){

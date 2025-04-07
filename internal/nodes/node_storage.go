@@ -15,6 +15,7 @@ type RaftStorage struct {
 	mu       sync.Mutex
 	db       *leveldb.DB
 	filePath string
+	isfinish bool
 }
 
 // NewRaftStorage 创建 Raft 存储
@@ -27,6 +28,7 @@ func NewRaftStorage(filePath string) *RaftStorage {
 	return &RaftStorage{
 		db:       db,
 		filePath: filePath,
+		isfinish: false,
 	}
 }
 
@@ -34,6 +36,9 @@ func NewRaftStorage(filePath string) *RaftStorage {
 func (rs *RaftStorage) SetCurrentTerm(term int) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
+	if rs.isfinish {
+		return
+	}
 	err := rs.db.Put([]byte("current_term"), []byte(strconv.Itoa(term)), nil)
 	if err != nil {
 		log.Error("SetCurrentTerm 持久化失败:", zap.Error(err))
@@ -56,6 +61,9 @@ func (rs *RaftStorage) GetCurrentTerm() int {
 func (rs *RaftStorage) SetVotedFor(candidate string) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
+	if rs.isfinish {
+		return
+	}
 	err := rs.db.Put([]byte("voted_for"), []byte(candidate), nil)
 	if err != nil {
 		log.Error("SetVotedFor 持久化失败:", zap.Error(err))
@@ -77,6 +85,9 @@ func (rs *RaftStorage) GetVotedFor() string {
 func (rs *RaftStorage) SetTermAndVote(term int, candidate string) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
+	if rs.isfinish {
+		return
+	}
 
 	batch := new(leveldb.Batch)
 	batch.Put([]byte("current_term"), []byte(strconv.Itoa(term)))
@@ -92,6 +103,9 @@ func (rs *RaftStorage) SetTermAndVote(term int, candidate string) {
 func (rs *RaftStorage) AppendLog(entry RaftLogEntry) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
+	if rs.db == nil {
+		return
+	}
 
 	// 序列化日志
 	batch := new(leveldb.Batch)
@@ -126,6 +140,9 @@ func (rs *RaftStorage) WriteLog(entries []RaftLogEntry) {
 	}
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
+	if rs.isfinish {
+		return
+	}
 
 	batch := new(leveldb.Batch)
 	for _, entry := range entries {
@@ -170,5 +187,8 @@ func (rs *RaftStorage) GetLogEntries() []RaftLogEntry {
 
 // Close 关闭数据库
 func (rs *RaftStorage) Close() {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
 	rs.db.Close()
+	rs.isfinish = true
 }

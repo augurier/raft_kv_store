@@ -17,15 +17,25 @@ func ExecuteNodeI(id string, isRestart bool, peerIds []string, threadTransport *
 		os.RemoveAll("storage/node" + id)
 	}
 
-	os.RemoveAll("leveldb/simple-kv-store" + id)
-
-	db, err := leveldb.OpenFile("leveldb/simple-kv-store" + id, nil)
+	// 创建临时目录用于 leveldb
+	dbPath, err := os.MkdirTemp("", "simple-kv-store-"+id+"-")
 	if err != nil {
-		fmt.Println("Failed to open database: ", err)
+		panic(fmt.Sprintf("无法创建临时数据库目录: %s", err))
 	}
 
-	// 打开或创建节点数据持久化文件
-	storage := nodes.NewRaftStorage("storage/node" + id)
+	// 创建临时目录用于 storage
+	storagePath, err := os.MkdirTemp("", "raft-storage-"+id+"-")
+	if err != nil {
+		panic(fmt.Sprintf("无法创建临时存储目录: %s", err))
+	}
+
+	db, err := leveldb.OpenFile(dbPath, nil)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to open database: %s", err))
+	}
+
+	// 初始化 Raft 存储
+	storage := nodes.NewRaftStorage(storagePath)
 
 	var otherIds []string
 	for _, ids := range peerIds {
@@ -70,24 +80,18 @@ func ExecuteStaticNodeI(id string, isRestart bool, peerIds []string, threadTrans
 	return node, quitChan
 }
 
-func StopElectionReset(nodeCollections [] *nodes.Node, quitCollections []chan struct{}) {
-	for i := 0; i < len(quitCollections); i++ {
+func StopElectionReset(nodeCollections [] *nodes.Node) {
+	for i := 0; i < len(nodeCollections); i++ {
 		node := nodeCollections[i]
-		quitChan := quitCollections[i]
-		go func(node *nodes.Node, quitChan chan struct{}) {
+		go func(node *nodes.Node) {
 			ticker := time.NewTicker(400 * time.Millisecond)
 			defer ticker.Stop()
 
 			for {
-				select {
-				case <-quitChan:
-					return // 退出 goroutine
-
-				case <-ticker.C:
-					node.ResetElectionTimer() // 不主动触发选举
-				}
+				<-ticker.C
+				node.ResetElectionTimer() // 不主动触发选举
 			}
-		}(node, quitChan)		
+		}(node)		
 	}
 }
 
@@ -123,59 +127,116 @@ func FindLeader(t *testing.T, nodeCollections []* nodes.Node) (i int) {
 		}
 	}
 	t.Errorf("系统目前没有leader")
+	t.FailNow()
 	return 0
 }
 
 func CheckOneLeader(t *testing.T, nodeCollections []* nodes.Node) {
 	cnt := 0
 	for _, node := range nodeCollections {
+		node.Mu.Lock()
 		if node.State == nodes.Leader {
 			cnt++
 		}
+		node.Mu.Unlock()
 	}
 	if cnt != 1 {
 		t.Errorf("实际有%d个leader(!=1)", cnt)
+		t.FailNow()
 	}
 }
 
 func CheckNoLeader(t *testing.T, nodeCollections []* nodes.Node) {
 	cnt := 0
 	for _, node := range nodeCollections {
+		node.Mu.Lock()
 		if node.State == nodes.Leader {
 			cnt++
 		}
+		node.Mu.Unlock()
 	}
 	if cnt != 0 {
 		t.Errorf("实际有%d个leader(!=0)", cnt)
+		t.FailNow()
 	}
 }
 
 func CheckZeroOrOneLeader(t *testing.T, nodeCollections []* nodes.Node) {
 	cnt := 0
 	for _, node := range nodeCollections {
+		node.Mu.Lock()
 		if node.State == nodes.Leader {
 			cnt++
 		}
+		node.Mu.Unlock()
 	}
 	if cnt > 1 {
-		t.Errorf("实际有%d个leader(>1)", cnt)
+		errmsg := fmt.Sprintf("实际有%d个leader(>1)", cnt)
+		WriteFailLog(nodeCollections[0].SelfId, errmsg)
+		t.Error(errmsg)
+		t.FailNow()
 	}
 }
 
 func CheckIsLeader(t *testing.T, node *nodes.Node) {
+	node.Mu.Lock()
+	defer node.Mu.Unlock()
 	if node.State != nodes.Leader {
 		t.Errorf("[%s]不是leader", node.SelfId)
+		t.FailNow()
 	}
 }
 
 func CheckTerm(t *testing.T, node *nodes.Node, targetTerm int) {
+	node.Mu.Lock()
+	defer node.Mu.Unlock()
 	if node.CurrTerm != targetTerm {
 		t.Errorf("[%s]实际term=%d (!=%d)", node.SelfId, node.CurrTerm, targetTerm)
+		t.FailNow()
 	}
 }
 
 func CheckLogNum(t *testing.T, node *nodes.Node, targetnum int) {
+	node.Mu.Lock()
+	defer node.Mu.Unlock()
 	if len(node.Log) != targetnum {
 		t.Errorf("[%s]实际logNum=%d (!=%d)", node.SelfId, len(node.Log), targetnum)
+		t.FailNow()
 	}
+}
+
+func CheckSameLog(t *testing.T, nodeCollections []* nodes.Node) {
+	nodeCollections[0].Mu.Lock()
+	defer nodeCollections[0].Mu.Unlock()
+	standard_node := nodeCollections[0]
+	for i, node := range nodeCollections {
+		if i != 0 {
+			node.Mu.Lock()
+			if len(node.Log) != len(standard_node.Log) {
+				errmsg := fmt.Sprintf("[1]和[%s]日志数量不一致", node.SelfId)
+				WriteFailLog(node.SelfId, errmsg)
+				t.Error(errmsg)
+				t.FailNow()
+			}
+
+			for idx, log := range node.Log {
+				standard_log := standard_node.Log[idx]
+				if log.Term != standard_log.Term || 
+					log.LogE.Key != standard_log.LogE.Key || 
+					log.LogE.Value != standard_log.LogE.Value {
+						errmsg := fmt.Sprintf("[1]和[%s]日志id%d不一致", node.SelfId, idx)
+						WriteFailLog(node.SelfId, errmsg)
+						t.Error(errmsg)
+						t.FailNow()
+				}
+			}
+			node.Mu.Unlock()
+		}
+	}
+}
+
+func WriteFailLog(name string, errmsg string) {
+	f, _ := os.Create(name + ".log")
+	fmt.Fprint(f, errmsg)
+	f.Close()
 }

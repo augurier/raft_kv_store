@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"math/rand"
+	"simple-kv-store/internal/logprovider"
 	"strconv"
 	"sync"
 	"time"
@@ -17,13 +18,18 @@ type RequestVoteArgs struct {
 }
 
 type RequestVoteReply struct {
+	Mu sync.Mutex
     Term        int  // 当前节点的最新任期
     VoteGranted bool // 是否同意投票
 }
 
 func (n *Node) StartElection() {
+	defer logprovider.DebugTraceback("startElection")
 	n.Mu.Lock()
-    defer n.Mu.Unlock()
+	if n.IsFinish {
+		n.Mu.Unlock()
+		return
+	}
     // 增加当前任期，转换为 Candidate
     n.CurrTerm++
     n.State = Candidate
@@ -58,12 +64,25 @@ func (n *Node) StartElection() {
     totalNodes := len(n.Nodes)
     grantedVotes := 1 // 自己的票
 
+	currTerm := n.CurrTerm
+	currState := n.State
+	n.Mu.Unlock()
+
     for _, peerId := range n.Nodes {
 		go func(peerId string) {
-			reply := RequestVoteReply{}
+			defer logprovider.DebugTraceback("vote")
+			var reply RequestVoteReply
 			if n.sendRequestVote(peerId, &args, &reply) {
 				Mu.Lock()
+				defer Mu.Unlock()
+				n.Mu.Lock()
+				defer n.Mu.Unlock()
+
+				if currTerm != n.CurrTerm || currState != n.State {
+					return
+				}
 				
+				reply.Mu.Lock()
 				if reply.Term > n.CurrTerm {
 					// 发现更高任期，回退为 Follower
 					log.Sugar().Infof("[%s] 发现更高的 Term (%d)，回退为 Follower", n.SelfId, reply.Term)
@@ -72,34 +91,37 @@ func (n *Node) StartElection() {
 					n.VotedFor = ""
 					n.Storage.SetTermAndVote(n.CurrTerm, n.VotedFor)
 					n.ResetElectionTimer()
-					Mu.Unlock()
+					reply.Mu.Unlock()
 					return
 				}
 	
 				if reply.VoteGranted {
 					grantedVotes++
 				}
+				reply.Mu.Unlock()
 	
 				if grantedVotes == totalNodes / 2 + 1 {
 					n.State = Leader
 					log.Sugar().Infof("[%s] 当选 Leader!", n.SelfId)
 					n.initLeaderState()
 				}
-	
-				Mu.Unlock()
 			}
 		}(peerId)
 	}
 	
 	// 等待选举结果
 	time.Sleep(300 * time.Millisecond)
+	
 	Mu.Lock()
+	defer Mu.Unlock()
+	n.Mu.Lock()
+	defer n.Mu.Unlock()
+
 	if n.State == Candidate {
 		log.Sugar().Infof("[%s] 选举超时，等待后将重新发起选举", n.SelfId)
 		// n.State = Follower 这里不修改，如果appendentries收到term合理的心跳，再变回follower
 		n.ResetElectionTimer()
 	}
-	Mu.Unlock()
 }
 
 func (node *Node) sendRequestVote(peerId string, args *RequestVoteArgs, reply *RequestVoteReply) bool {
@@ -125,8 +147,12 @@ func (node *Node) sendRequestVote(peerId string, args *RequestVoteArgs, reply *R
 }
 
 func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error {
+	defer logprovider.DebugTraceback("requestVote")
 	n.Mu.Lock()
     defer n.Mu.Unlock()
+
+	reply.Mu.Lock()
+	defer reply.Mu.Unlock()
     // 如果候选人的任期小于当前任期，则拒绝投票
     if args.Term < n.CurrTerm {
         reply.Term = n.CurrTerm
@@ -175,11 +201,14 @@ func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 	return nil
 }
 
-// follower 150-300ms内没收到appendentries心跳，就变成candidate发起选举
+// follower 一段时间内没收到appendentries心跳，就变成candidate发起选举
 func (node *Node) ResetElectionTimer() {
+	node.MuElection.Lock()
+	defer node.MuElection.Unlock()
 	if node.ElectionTimer == nil {
 		node.ElectionTimer = time.NewTimer(node.RTTable.GetElectionTimeout())
 		go func() {
+			defer logprovider.DebugTraceback("reset")
 			for {
 				<-node.ElectionTimer.C
 				node.StartElection()

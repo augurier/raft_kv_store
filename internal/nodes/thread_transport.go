@@ -184,7 +184,7 @@ func (t *ThreadTransport) CallWithTimeout(client ClientInterface, serviceMethod 
 			return fmt.Errorf("network partition: %s cannot reach %s", threadClient.TargetId, threadClient.SourceId)
 		}
 		return err
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(250 * time.Millisecond):
 		return fmt.Errorf("RPC 调用超时: %s", serviceMethod)
 	}
 }

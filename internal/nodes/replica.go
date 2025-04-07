@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"simple-kv-store/internal/logprovider"
 	"sort"
 	"strconv"
 	"sync"
@@ -18,6 +19,7 @@ type AppendEntriesArg struct {
 }
 
 type AppendEntriesReply struct {
+	Mu sync.Mutex
 	Term int
 	Success bool
 }
@@ -31,14 +33,20 @@ func (node *Node) BroadCastKV() {
 	// 遍历所有节点
 	for _, id := range node.Nodes {
 		go func(id string) {
+			defer logprovider.DebugTraceback("send")
 			node.sendKV(id, &failCount, &failMutex)
 		}(id)
 	}
 }
 
 func (node *Node) sendKV(peerId string, failCount *int, failMutex *sync.Mutex) {
-	client, err := node.Transport.DialHTTPWithTimeout("tcp", node.SelfId, peerId)
+	node.Mu.Lock()
+	selfId := node.SelfId
+	node.Mu.Unlock()
+
+	client, err := node.Transport.DialHTTPWithTimeout("tcp", selfId, peerId)
 	if err != nil {
+		node.Mu.Lock()
 		log.Error("[" + node.SelfId + "]dialling [" + peerId + "] fail: ", zap.Error(err))
 		failMutex.Lock()
 		*failCount++
@@ -48,6 +56,7 @@ func (node *Node) sendKV(peerId string, failCount *int, failMutex *sync.Mutex) {
 			node.ResetElectionTimer()
 		}
 		failMutex.Unlock()
+		node.Mu.Unlock()
 		return
 	}
 
@@ -59,16 +68,15 @@ func (node *Node) sendKV(peerId string, failCount *int, failMutex *sync.Mutex) {
 	}(client)
 
 	node.Mu.Lock()
-    defer node.Mu.Unlock()
 
-	var appendReply AppendEntriesReply
-	appendReply.Success = false
 	NextIndex := node.NextIndex[peerId]
 	// log.Info("NextIndex " + strconv.Itoa(NextIndex))
-	for (!appendReply.Success) {
+	for {
 		if NextIndex < 0 {
 			log.Fatal("assert >= 0 here")
 		}
+	
+
 		sendEntries := node.Log[NextIndex:]
 		arg := AppendEntriesArg{
 			Term: node.CurrTerm,
@@ -80,30 +88,60 @@ func (node *Node) sendKV(peerId string, failCount *int, failMutex *sync.Mutex) {
 		if arg.PrevLogIndex >= 0 {
 			arg.PrevLogTerm = node.Log[arg.PrevLogIndex].Term
 		}
+		// 记录关键数据后解锁
+		currTerm := node.CurrTerm
+		currState := node.State
+		MaxLogId := node.MaxLogId
+
+		var appendReply AppendEntriesReply
+		appendReply.Success = false			
+		node.Mu.Unlock()
+
 		callErr := node.Transport.CallWithTimeout(client, "Node.AppendEntries", &arg, &appendReply) // RPC
+
+		node.Mu.Lock()
+		if node.CurrTerm != currTerm || node.MaxLogId != MaxLogId || node.State != currState {
+			node.Mu.Unlock()
+			return
+		}
+
 		if callErr != nil {
 			log.Error("[" + node.SelfId + "]calling [" + peerId + "] fail: ", zap.Error(callErr))
 			failMutex.Lock()
 			*failCount++
 			if *failCount == len(node.Nodes) / 2 + 1 { // 无法联系超过半数：自己有问题，降级
+				log.Info("term=" + strconv.Itoa(node.CurrTerm) + "的Leader[" + node.SelfId + "]无法联系到半数节点, 降级为 Follower")
 				node.LeaderId = ""
 				node.State = Follower
 				node.ResetElectionTimer()
 			}
 			failMutex.Unlock()
+			node.Mu.Unlock()
 			return
 		}
 
+		appendReply.Mu.Lock()
 		if appendReply.Term != node.CurrTerm {
-			log.Info("term=" + strconv.Itoa(node.CurrTerm) + "的Leader[" + node.SelfId + "]收到更高的 term=" + strconv.Itoa(appendReply.Term) + "，转换为 Follower")
+			log.Sugar().Infof("term=%s的leader[%s]因为[%s]收到更高的term=%s, 转换为follower", 
+					strconv.Itoa(node.CurrTerm), node.SelfId, peerId, strconv.Itoa(appendReply.Term))
+
 			node.LeaderId = ""
 			node.CurrTerm = appendReply.Term
 			node.State = Follower
 			node.VotedFor = ""
 			node.Storage.SetTermAndVote(node.CurrTerm, node.VotedFor)
 			node.ResetElectionTimer()
+			appendReply.Mu.Unlock()
+			node.Mu.Unlock()
 			return
 		}
+
+		if appendReply.Success {
+			appendReply.Mu.Unlock()
+			break
+		}
+
+		appendReply.Mu.Unlock()
 		NextIndex-- // 失败往前传一格
 	}
 	
@@ -111,9 +149,17 @@ func (node *Node) sendKV(peerId string, failCount *int, failMutex *sync.Mutex) {
 	node.NextIndex[peerId] = node.MaxLogId + 1
 	node.MatchIndex[peerId] = node.MaxLogId
 	node.updateCommitIndex()
+	node.Mu.Unlock()
 }
 
 func (node *Node) updateCommitIndex() {
+	if node.Mu.TryLock() {
+		log.Fatal("这里要保证有锁")
+	}
+	if node.IsFinish {
+		return
+	}
+
     totalNodes := len(node.Nodes)
 
     // 收集所有 MatchIndex 并排序
@@ -151,17 +197,19 @@ func (node *Node) applyCommittedLogs() {
 
 // RPC call
 func (node *Node) AppendEntries(arg *AppendEntriesArg, reply *AppendEntriesReply) error {
-	// start := time.Now()
-	// defer func() {
-	// 	log.Sugar().Infof("AppendEntries 处理时间: %v", time.Since(start))
-	// }()
-	log.Sugar().Infof("[%s]收到[%s]的AppendEntries", node.SelfId, arg.LeaderId)
-    node.Mu.Lock()
-    defer node.Mu.Unlock()
+	defer logprovider.DebugTraceback("append")
+
+    node.Mu.Lock()	
+    defer node.Mu.Unlock()	
+	log.Sugar().Infof("[%s]在term=%d收到[%s]的AppendEntries", node.SelfId, node.CurrTerm, arg.LeaderId)
+
 
     // 如果 term 过期，拒绝接受日志
     if node.CurrTerm > arg.Term {
-        *reply = AppendEntriesReply{node.CurrTerm, false}
+		reply.Mu.Lock()
+		reply.Term = node.CurrTerm
+		reply.Success = false
+		reply.Mu.Unlock()
         return nil
     }
 	
@@ -179,7 +227,10 @@ func (node *Node) AppendEntries(arg *AppendEntriesArg, reply *AppendEntriesReply
 
     // 检查 prevLogIndex 是否有效
     if arg.PrevLogIndex >= len(node.Log) || (arg.PrevLogIndex >= 0 && node.Log[arg.PrevLogIndex].Term != arg.PrevLogTerm) {
-        *reply = AppendEntriesReply{node.CurrTerm, false}
+		reply.Mu.Lock()
+		reply.Term = node.CurrTerm
+		reply.Success = false
+		reply.Mu.Unlock()
         return nil
     }
 
@@ -222,6 +273,9 @@ func (node *Node) AppendEntries(arg *AppendEntriesArg, reply *AppendEntriesReply
 
 	// 在成功接受日志或心跳后，重置选举超时
 	node.ResetElectionTimer()
-    *reply = AppendEntriesReply{node.CurrTerm, true}
+	reply.Mu.Lock()
+	reply.Term = node.CurrTerm
+	reply.Success = true
+	reply.Mu.Unlock()
     return nil
 }

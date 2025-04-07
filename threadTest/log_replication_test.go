@@ -23,7 +23,7 @@ func TestNormalReplication(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -70,7 +70,7 @@ func TestParallelReplication(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -118,7 +118,7 @@ func TestFollowerLagging(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -137,6 +137,7 @@ func TestFollowerLagging(t *testing.T) {
 	CheckIsLeader(t, nodeCollections[0])
 	CheckTerm(t, nodeCollections[0], 2)
 	close(quitCollections[1])
+	time.Sleep(time.Second)
 
 	for i := 0; i < 10; i++ {
 		key := strconv.Itoa(i)
@@ -148,7 +149,8 @@ func TestFollowerLagging(t *testing.T) {
 	quitCollections[1] = q
 	nodeCollections[1] = node
 	nodeCollections[1].State = nodes.Follower
-	StopElectionReset(nodeCollections[1:2], quitCollections[1:2])
+	StopElectionReset(nodeCollections[1:2])
+	nodeCollections[0].BroadCastKV()
 
 	time.Sleep(time.Second)
 	for i := 0; i < n; i++ {
@@ -173,7 +175,7 @@ func TestFailLogAppendRpc(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -225,7 +227,7 @@ func TestRepeatLogAppendRpc(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
@@ -277,7 +279,7 @@ func TestDelayLogAppendRpc(t *testing.T) {
 		quitCollections = append(quitCollections, quitChan)
 		nodeCollections = append(nodeCollections, n)
 	}
-	StopElectionReset(nodeCollections, quitCollections)
+	StopElectionReset(nodeCollections)
 
 	// 通知所有node结束
 	defer func(){
