@@ -120,42 +120,38 @@ func (t *ThreadTransport) CallWithTimeout(client ClientInterface, serviceMethod 
 	}
 
 	var isConnected bool
-	if threadClient.SourceId == "" { // 来自客户端的连接
+	if threadClient.SourceId == "" {
 		isConnected = true
 	} else {
 		t.mu.Lock()
-		isConnected = t.connectivityMap[threadClient.SourceId][threadClient.TargetId] // 检查连通性
-		t.mu.Unlock()		
+		isConnected = t.connectivityMap[threadClient.SourceId][threadClient.TargetId]
+		t.mu.Unlock()
+	}
+	if !isConnected {
+		return fmt.Errorf("网络分区: %s cannot reach %s", threadClient.SourceId, threadClient.TargetId)
 	}
 
-
-    if !isConnected {
-        return fmt.Errorf("网络分区: %s cannot reach %s", threadClient.SourceId, threadClient.TargetId)
-    }
-
-	// 获取目标节点的 channel
 	targetChan, exists := t.getNodeChan(threadClient.TargetId)
 	if !exists {
 		return fmt.Errorf("目标节点 [%s] 不存在", threadClient.TargetId)
 	}
 
-	// 创建响应通道（用于返回 RPC 结果）
 	done := make(chan error, 1)
-
 	behavior := t.Ctx.GetBehavior(threadClient.SourceId, threadClient.TargetId)
-	// 发送请求
-	request := RPCRequest{
-		ServiceMethod: serviceMethod,
-		Args:          args,
-		Reply:         reply,
-		Done:  done,
-		SourceId: threadClient.SourceId,
-		Behavior: behavior,
+
+	// 辅助函数：复制 replyCopy 到原始 reply
+	copyReply := func(dst, src interface{}) {
+		switch d := dst.(type) {
+		case *AppendEntriesReply:
+			*d = *(src.(*AppendEntriesReply))
+		case *RequestVoteReply:
+			*d = *(src.(*RequestVoteReply))
+		}
 	}
 
-	sendRequest := func(req RPCRequest, targetChan chan RPCRequest) bool {
+	sendRequest := func(req RPCRequest, ch chan RPCRequest) bool {
 		select {
-		case targetChan <- req:
+		case ch <- req:
 			return true
 		default:
 			return false
@@ -168,36 +164,71 @@ func (t *ThreadTransport) CallWithTimeout(client ClientInterface, serviceMethod 
 		if !ok {
 			log.Fatal("没有设置对应的retry次数")
 		}
-		request.Behavior = NormalRpc
-		// 尝试发送多次, 期待同一个done
+
+		var lastErr error
 		for i := 0; i < retryTimes; i++ {
+			var replyCopy interface{}
+			useCopy := true
+
+			switch r := reply.(type) {
+			case *AppendEntriesReply:
+				tmp := *r
+				replyCopy = &tmp
+			case *RequestVoteReply:
+				tmp := *r
+				replyCopy = &tmp
+			default:
+				replyCopy = reply // 其他类型不复制
+				useCopy = false
+			}
+
+			request := RPCRequest{
+				ServiceMethod: serviceMethod,
+				Args:          args,
+				Reply:         replyCopy,
+				Done:          done,
+				SourceId:      threadClient.SourceId,
+				Behavior:      NormalRpc,
+			}
+
 			if !sendRequest(request, targetChan) {
 				return fmt.Errorf("目标节点 [%s] 无法接收请求", threadClient.TargetId)
 			}
+
+			select {
+			case err := <-done:
+				if err == nil && useCopy {
+					copyReply(reply, replyCopy)
+				}
+				if err == nil {
+					return nil
+				}
+				lastErr = err
+			case <-time.After(250 * time.Millisecond):
+				lastErr = fmt.Errorf("RPC 调用超时: %s", serviceMethod)
+			}
 		}
+		return lastErr
 
 	default:
+		request := RPCRequest{
+			ServiceMethod: serviceMethod,
+			Args:          args,
+			Reply:         reply,
+			Done:          done,
+			SourceId:      threadClient.SourceId,
+			Behavior:      behavior,
+		}
+
 		if !sendRequest(request, targetChan) {
 			return fmt.Errorf("目标节点 [%s] 无法接收请求", threadClient.TargetId)
 		}
-	}
-	
-	// 等待响应或超时
-	select {
-	case err := <-done:
-		if threadClient.SourceId == "" { // 来自客户端的连接
-			isConnected = true
-		} else {
-			t.mu.Lock()
-			isConnected = t.connectivityMap[threadClient.TargetId][threadClient.SourceId] // 检查连通性
-			t.mu.Unlock()
+
+		select {
+		case err := <-done:
+			return err
+		case <-time.After(250 * time.Millisecond):
+			return fmt.Errorf("RPC 调用超时: %s", serviceMethod)
 		}
-	
-		if !isConnected {
-			return fmt.Errorf("network partition: %s cannot reach %s", threadClient.TargetId, threadClient.SourceId)
-		}
-		return err
-	case <-time.After(250 * time.Millisecond):
-		return fmt.Errorf("RPC 调用超时: %s", serviceMethod)
 	}
 }

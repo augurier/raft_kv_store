@@ -72,7 +72,7 @@ func main() {
 	defer storage.Close()
 
 	// 初始化
-	node := nodes.InitRPCNode(*id, *port, idClusterPairs, db, storage, !*isRestart)
+	node := nodes.InitRPCNode(*id, *port, idClusterPairs, db, storage, *isRestart)
 
 	// 开启 raft
 	quitChan := make(chan struct{}, 1)

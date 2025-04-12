@@ -159,7 +159,10 @@ func (node *Node) switchReq(req RPCRequest, delayTime time.Duration) {
 		if !ok || !ok2 {
 			req.Done <- errors.New("type assertion failed for AppendEntries")
 		} else {
-			req.Done <- node.AppendEntries(arg, resp)
+			var respCopy AppendEntriesReply
+			err := node.AppendEntries(arg, &respCopy)
+			*resp = respCopy
+			req.Done <- err
 		}
 
 	case "Node.RequestVote":
@@ -168,7 +171,10 @@ func (node *Node) switchReq(req RPCRequest, delayTime time.Duration) {
 		if !ok || !ok2 {
 			req.Done <- errors.New("type assertion failed for RequestVote")
 		} else {
-			req.Done <- node.RequestVote(arg, resp)
+			var respCopy RequestVoteReply
+			err := node.RequestVote(arg, &respCopy)
+			*resp = respCopy
+			req.Done <- err
 		}
 
 	case "Node.WriteKV":

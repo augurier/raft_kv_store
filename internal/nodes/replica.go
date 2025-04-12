@@ -19,7 +19,6 @@ type AppendEntriesArg struct {
 }
 
 type AppendEntriesReply struct {
-	Mu sync.Mutex
 	Term int
 	Success bool
 }
@@ -121,7 +120,6 @@ func (node *Node) sendKV(peerId string, failCount *int, failMutex *sync.Mutex) {
 			return
 		}
 
-		appendReply.Mu.Lock()
 		if appendReply.Term != node.CurrTerm {
 			log.Sugar().Infof("term=%s的leader[%s]因为[%s]收到更高的term=%s, 转换为follower", 
 					strconv.Itoa(node.CurrTerm), node.SelfId, peerId, strconv.Itoa(appendReply.Term))
@@ -132,17 +130,14 @@ func (node *Node) sendKV(peerId string, failCount *int, failMutex *sync.Mutex) {
 			node.VotedFor = ""
 			node.Storage.SetTermAndVote(node.CurrTerm, node.VotedFor)
 			node.ResetElectionTimer()
-			appendReply.Mu.Unlock()
 			node.Mu.Unlock()
 			return
 		}
 
 		if appendReply.Success {
-			appendReply.Mu.Unlock()
 			break
 		}
 
-		appendReply.Mu.Unlock()
 		NextIndex-- // 失败往前传一格
 	}
 	
@@ -207,10 +202,8 @@ func (node *Node) AppendEntries(arg *AppendEntriesArg, reply *AppendEntriesReply
 
     // 如果 term 过期，拒绝接受日志
     if node.CurrTerm > arg.Term {
-		reply.Mu.Lock()
 		reply.Term = node.CurrTerm
 		reply.Success = false
-		reply.Mu.Unlock()
         return nil
     }
 	
@@ -228,10 +221,8 @@ func (node *Node) AppendEntries(arg *AppendEntriesArg, reply *AppendEntriesReply
 
     // 检查 prevLogIndex 是否有效
     if arg.PrevLogIndex >= len(node.Log) || (arg.PrevLogIndex >= 0 && node.Log[arg.PrevLogIndex].Term != arg.PrevLogTerm) {
-		reply.Mu.Lock()
 		reply.Term = node.CurrTerm
 		reply.Success = false
-		reply.Mu.Unlock()
         return nil
     }
 
@@ -274,9 +265,7 @@ func (node *Node) AppendEntries(arg *AppendEntriesArg, reply *AppendEntriesReply
 
 	// 在成功接受日志或心跳后，重置选举超时
 	node.ResetElectionTimer()
-	reply.Mu.Lock()
 	reply.Term = node.CurrTerm
 	reply.Success = true
-	reply.Mu.Unlock()
     return nil
 }

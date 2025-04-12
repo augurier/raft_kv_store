@@ -18,7 +18,6 @@ type RequestVoteArgs struct {
 }
 
 type RequestVoteReply struct {
-	Mu sync.Mutex
     Term        int  // 当前节点的最新任期
     VoteGranted bool // 是否同意投票
 }
@@ -82,7 +81,6 @@ func (n *Node) StartElection() {
 					return
 				}
 				
-				reply.Mu.Lock()
 				if reply.Term > n.CurrTerm {
 					// 发现更高任期，回退为 Follower
 					log.Sugar().Infof("[%s] 发现更高的 Term (%d)，回退为 Follower", n.SelfId, reply.Term)
@@ -91,14 +89,12 @@ func (n *Node) StartElection() {
 					n.VotedFor = ""
 					n.Storage.SetTermAndVote(n.CurrTerm, n.VotedFor)
 					n.ResetElectionTimer()
-					reply.Mu.Unlock()
 					return
 				}
 	
 				if reply.VoteGranted {
 					grantedVotes++
 				}
-				reply.Mu.Unlock()
 	
 				if grantedVotes == totalNodes / 2 + 1 {
 					n.State = Leader
@@ -151,8 +147,6 @@ func (n *Node) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) error
 	n.Mu.Lock()
     defer n.Mu.Unlock()
 
-	reply.Mu.Lock()
-	defer reply.Mu.Unlock()
     // 如果候选人的任期小于当前任期，则拒绝投票
     if args.Term < n.CurrTerm {
         reply.Term = n.CurrTerm
