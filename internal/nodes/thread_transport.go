@@ -80,6 +80,19 @@ func (t *ThreadTransport) SetConnectivity(from, to string, isConnected bool) {
     }
 }
 
+func (t *ThreadTransport) ResetConnectivity() {
+    t.mu.Lock()
+    defer t.mu.Unlock()
+	for firstId:= range t.nodeChans {
+		for peerId:= range t.nodeChans {
+			if firstId != peerId {
+				t.connectivityMap[firstId][peerId] = true
+				t.connectivityMap[peerId][firstId] = true				
+			}
+		}		
+	}
+}
+
 // 获取节点的 channel
 func (t *ThreadTransport) getNodeChan(nodeId string) (chan RPCRequest, bool) {
 	t.mu.Lock()

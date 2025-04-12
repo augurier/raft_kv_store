@@ -3,7 +3,7 @@ package threadTest
 import (
 	"fmt"
 	"os"
-	"simple-kv-store/internal/client"
+	clientPkg "simple-kv-store/internal/client"
 	"simple-kv-store/internal/nodes"
 	"strconv"
 	"testing"
@@ -58,7 +58,7 @@ func ExecuteStaticNodeI(id string, isRestart bool, peerIds []string, threadTrans
 
 	os.RemoveAll("leveldb/simple-kv-store" + id)
 
-	db, err := leveldb.OpenFile("leveldb/simple-kv-store" + id, nil)
+	db, err := leveldb.OpenFile("leveldb/simple-kv-store"+id, nil)
 	if err != nil {
 		fmt.Println("Failed to open database: ", err)
 	}
@@ -80,7 +80,7 @@ func ExecuteStaticNodeI(id string, isRestart bool, peerIds []string, threadTrans
 	return node, quitChan
 }
 
-func StopElectionReset(nodeCollections [] *nodes.Node) {
+func StopElectionReset(nodeCollections []*nodes.Node) {
 	for i := 0; i < len(nodeCollections); i++ {
 		node := nodeCollections[i]
 		go func(node *nodes.Node) {
@@ -91,7 +91,7 @@ func StopElectionReset(nodeCollections [] *nodes.Node) {
 				<-ticker.C
 				node.ResetElectionTimer() // 不主动触发选举
 			}
-		}(node)		
+		}(node)
 	}
 }
 
@@ -101,10 +101,10 @@ func SendKvCall(kvCall *nodes.LogEntryCall, node *nodes.Node) {
 
 	node.MaxLogId++
 	logId := node.MaxLogId
-	rLogE := nodes.RaftLogEntry{LogE: kvCall.LogE,LogId:  logId, Term: node.CurrTerm}
+	rLogE := nodes.RaftLogEntry{LogE: kvCall.LogE, LogId: logId, Term: node.CurrTerm}
 	node.Log = append(node.Log, rLogE)
 	node.Storage.AppendLog(rLogE)
-	// 广播给其它节点	
+	// 广播给其它节点
 	node.BroadCastKV()
 }
 
@@ -116,11 +116,11 @@ func ClientWriteLog(t *testing.T, startLogid int, endLogid int, cWrite *clientPk
 		s = cWrite.Write(newlog)
 		if s != clientPkg.Ok {
 			t.Errorf("write test fail")
-		}		
+		}
 	}
 }
 
-func FindLeader(t *testing.T, nodeCollections []* nodes.Node) (i int) {
+func FindLeader(t *testing.T, nodeCollections []*nodes.Node) (i int) {
 	for i, node := range nodeCollections {
 		if node.State == nodes.Leader {
 			return i
@@ -131,7 +131,7 @@ func FindLeader(t *testing.T, nodeCollections []* nodes.Node) (i int) {
 	return 0
 }
 
-func CheckOneLeader(t *testing.T, nodeCollections []* nodes.Node) {
+func CheckOneLeader(t *testing.T, nodeCollections []*nodes.Node) {
 	cnt := 0
 	for _, node := range nodeCollections {
 		node.Mu.Lock()
@@ -146,7 +146,7 @@ func CheckOneLeader(t *testing.T, nodeCollections []* nodes.Node) {
 	}
 }
 
-func CheckNoLeader(t *testing.T, nodeCollections []* nodes.Node) {
+func CheckNoLeader(t *testing.T, nodeCollections []*nodes.Node) {
 	cnt := 0
 	for _, node := range nodeCollections {
 		node.Mu.Lock()
@@ -161,7 +161,7 @@ func CheckNoLeader(t *testing.T, nodeCollections []* nodes.Node) {
 	}
 }
 
-func CheckZeroOrOneLeader(t *testing.T, nodeCollections []* nodes.Node) {
+func CheckZeroOrOneLeader(t *testing.T, nodeCollections []*nodes.Node) {
 	cnt := 0
 	for _, node := range nodeCollections {
 		node.Mu.Lock()
@@ -171,7 +171,7 @@ func CheckZeroOrOneLeader(t *testing.T, nodeCollections []* nodes.Node) {
 		node.Mu.Unlock()
 	}
 	if cnt > 1 {
-		errmsg := fmt.Sprintf("实际有%d个leader(>1)", cnt)
+		errmsg := fmt.Sprintf("%d个节点中，实际有%d个leader(>1)", len(nodeCollections), cnt)
 		WriteFailLog(nodeCollections[0].SelfId, errmsg)
 		t.Error(errmsg)
 		t.FailNow()
@@ -205,7 +205,7 @@ func CheckLogNum(t *testing.T, node *nodes.Node, targetnum int) {
 	}
 }
 
-func CheckSameLog(t *testing.T, nodeCollections []* nodes.Node) {
+func CheckSameLog(t *testing.T, nodeCollections []*nodes.Node) {
 	nodeCollections[0].Mu.Lock()
 	defer nodeCollections[0].Mu.Unlock()
 	standard_node := nodeCollections[0]
@@ -213,7 +213,7 @@ func CheckSameLog(t *testing.T, nodeCollections []* nodes.Node) {
 		if i != 0 {
 			node.Mu.Lock()
 			if len(node.Log) != len(standard_node.Log) {
-				errmsg := fmt.Sprintf("[1]和[%s]日志数量不一致", node.SelfId)
+				errmsg := fmt.Sprintf("[%s]和[%s]日志数量不一致", nodeCollections[0].SelfId, node.SelfId)
 				WriteFailLog(node.SelfId, errmsg)
 				t.Error(errmsg)
 				t.FailNow()
@@ -221,13 +221,76 @@ func CheckSameLog(t *testing.T, nodeCollections []* nodes.Node) {
 
 			for idx, log := range node.Log {
 				standard_log := standard_node.Log[idx]
-				if log.Term != standard_log.Term || 
-					log.LogE.Key != standard_log.LogE.Key || 
+				if log.Term != standard_log.Term ||
+					log.LogE.Key != standard_log.LogE.Key ||
 					log.LogE.Value != standard_log.LogE.Value {
-						errmsg := fmt.Sprintf("[1]和[%s]日志id%d不一致", node.SelfId, idx)
+					errmsg := fmt.Sprintf("[1]和[%s]日志id%d不一致", node.SelfId, idx)
+					WriteFailLog(node.SelfId, errmsg)
+					t.Error(errmsg)
+					t.FailNow()
+				}
+			}
+			node.Mu.Unlock()
+		}
+	}
+}
+
+func CheckLeaderInvariant(t *testing.T, nodeCollections []*nodes.Node) {
+	leaderCnt := make(map[int]bool)
+	for _, node := range nodeCollections {
+		node.Mu.Lock()
+		if node.State == nodes.Leader {
+			if _, exist := leaderCnt[node.CurrTerm]; exist {
+				errmsg := fmt.Sprintf("在%d有多个leader(%s)", node.CurrTerm, node.SelfId)
+				WriteFailLog(node.SelfId, errmsg)
+				t.Error(errmsg)
+			} else {
+				leaderCnt[node.CurrTerm] = true
+			}
+		}
+		node.Mu.Unlock()
+	}
+}
+
+func CheckLogInvariant(t *testing.T, nodeCollections []*nodes.Node) {
+	nodeCollections[0].Mu.Lock()
+	defer nodeCollections[0].Mu.Unlock()
+	standard_node := nodeCollections[0]
+	standard_len := len(standard_node.Log)
+	for i, node := range nodeCollections {
+		if i != 0 {
+			node.Mu.Lock()
+			len2 := len(node.Log)
+			var shorti int
+			if len2 < standard_len {
+				shorti = len2
+			} else {
+				shorti = standard_len
+			}
+			if shorti == 0 {
+				node.Mu.Unlock()
+				continue
+			}
+
+			alreadySame := false
+			for i := shorti - 1; i >= 0; i-- {
+				standard_log := standard_node.Log[i]
+				log := node.Log[i]
+				if alreadySame {
+					if log.Term != standard_log.Term ||
+						log.LogE.Key != standard_log.LogE.Key ||
+						log.LogE.Value != standard_log.LogE.Value {
+						errmsg := fmt.Sprintf("[%s]和[%s]日志id%d不一致", standard_node.SelfId, node.SelfId, i)
 						WriteFailLog(node.SelfId, errmsg)
 						t.Error(errmsg)
 						t.FailNow()
+					}
+				} else {
+					if log.Term == standard_log.Term &&
+						log.LogE.Key == standard_log.LogE.Key &&
+						log.LogE.Value == standard_log.LogE.Value {
+						alreadySame = true
+					}
 				}
 			}
 			node.Mu.Unlock()

@@ -132,9 +132,9 @@ func (node *Node) listenForChan(rpcChan chan RPCRequest, quitChan chan struct{})
 
 			case FailRpc:
 				continue
+			default:
+				go node.switchReq(req, 0)				
 			}
-
-			go node.switchReq(req, 0)
 			
 		case <-quitChan:
 			node.Mu.Lock()

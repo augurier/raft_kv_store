@@ -27,6 +27,7 @@ type AppendEntriesReply struct {
 // leader收到新内容要广播，以及心跳广播（同步自己的log)
 func (node *Node) BroadCastKV() {
 	log.Sugar().Infof("leader[%s]广播消息", node.SelfId)
+	defer logprovider.DebugTraceback("broadcast")
 	failCount := 0
 	// 这里增加一个锁，防止并发修改成功计数
 	var failMutex sync.Mutex

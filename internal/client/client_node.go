@@ -60,6 +60,7 @@ func (client *Client) CloseRpcClient(c nodes.ClientInterface) {
 }
 
 func (client *Client) Write(kv nodes.LogEntry) Status {
+	defer logprovider.DebugTraceback("client")
 	log.Info("client write request key :" + kv.Key)
 	kvCall := nodes.LogEntryCall{LogE: kv, 
 		Id: nodes.LogEntryCallId{ClientId: client.ClientId, LogId: client.NextLogId}}
@@ -68,7 +69,7 @@ func (client *Client) Write(kv nodes.LogEntry) Status {
 	c := client.FindActiveNode()
 	var err error
 
-	timeout := 5 * time.Second
+	timeout := time.Second
 	deadline := time.Now().Add(timeout)
 
 	for { // 根据存活节点的反馈，直到找到leader
