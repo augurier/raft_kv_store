@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/syndtr/goleveldb/leveldb"
 	"os"
 	"os/signal"
 	"simple-kv-store/internal/logprovider"
@@ -10,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"github.com/syndtr/goleveldb/leveldb"
 
 	"go.uber.org/zap"
 )
@@ -29,11 +29,9 @@ func main() {
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 
 	port := flag.String("port", ":9091", "rpc listen port")
-	cluster := flag.String("cluster", "127.0.0.1:9092,127.0.0.1:9093", "comma sep")
+	cluster := flag.String("cluster", "127.0.0.1:9091,127.0.0.1:9092,127.0.0.1:9093", "comma sep")
 	id := flag.String("id", "1", "node ID")
-	pipe := flag.String("pipe", "", "input from scripts")
-	isLeader := flag.Bool("isleader", false, "init node state")
-	isNewDb := flag.Bool("isNewDb", true, "new test or restart")
+	isRestart := flag.Bool("isRestart", false, "new test or restart")
 
 	// 参数解析
 	flag.Parse()
@@ -42,43 +40,46 @@ func main() {
 	idCnt := 1
 	selfi, err := strconv.Atoi(*id)
 	if err != nil {
-		log.Error("figure id only")
+		log.Fatal("figure id only")
 	}
 	for _, addr := range clusters {
 		if idCnt == selfi {
 			idCnt++ // 命令行cluster按id排序传入，记录时跳过自己的id，先保证所有节点互相记录的id一致
+			continue
 		}
-		idClusterPairs[strconv.Itoa(idCnt)] = addr 
+		idClusterPairs[strconv.Itoa(idCnt)] = addr
 		idCnt++
 	}
 
-	if *isNewDb {
-		os.RemoveAll("leveldb/simple-kv-store" + *id)
+	// storage/文件夹下为node重要数据持久化数据库，节点一旦创建成功就不能被删除
+	if !*isRestart {	
+		os.RemoveAll("storage/node" + *id)
 	}
-	// 打开或创建每个结点自己的数据库
+
+	// 创建每个结点自己的数据库。这里一开始理解上有些误区，状态机的状态恢复应该靠节点的持久化log，
+	// 而用leveldb模拟状态机，造成了状态机本身的持久化，因此通过删去旧db避免这一矛盾
+	// 因此leveldb/文件夹下为状态机模拟数据库，每次节点启动都需要删除该数据库
+	os.RemoveAll("leveldb/simple-kv-store" + *id)
+
 	db, err := leveldb.OpenFile("leveldb/simple-kv-store" + *id, nil)
 	if err != nil {
 		log.Fatal("Failed to open database: ", zap.Error(err))
 	}
 	defer db.Close() // 确保数据库在使用完毕后关闭
-	iter := db.NewIterator(nil, nil)
-	defer iter.Release()
 
-	// 计数
-	count := 0
-	for iter.Next() {
-		count++
-	}
-	fmt.Printf(*id + "结点目前有数据：%d\n", count)
+	// 打开或创建节点数据持久化文件
+	storage := nodes.NewRaftStorage("storage/node" + *id)
+	defer storage.Close()
 
-	node := nodes.Init(*id, idClusterPairs, *pipe, db)
-	log.Info("id: " + *id + "节点开始监听: " + *port + "端口")
-	// 监听rpc
-	node.Rpc(*port)
+	// 初始化
+	node := nodes.InitRPCNode(*id, *port, idClusterPairs, db, storage, *isRestart)
+
 	// 开启 raft
-	nodes.Start(node, *isLeader)
+	quitChan := make(chan struct{}, 1)
+	nodes.Start(node, quitChan)
 
 	sig := <-sigs
-	fmt.Println("node_" + *id + "接收到信号:", sig)
+	fmt.Println("node_"+ *id +"接收到信号:", sig)
+	close(quitChan)
 
 }
